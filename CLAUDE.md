@@ -113,3 +113,46 @@ Deployment happens after:
 - `bot_army_schemas_chore` - Chore message schemas
 - `bot_army_core` - Core library and NATS decoder
 - `bot_army_infra` - Deployment infrastructure
+
+---
+
+## Agent Workflow Pattern
+
+**Effective use of Claude Code agents when developing this bot.**
+
+This follows the polyrepo agent strategy documented in `bot_army_infra/CLAUDE.md`.
+
+### When to Use Haiku Agents
+
+- Exploring handler implementations and understanding existing patterns
+- Reading test files to understand expected behavior
+- Diagnostics: checking test failures, understanding error logs
+- Code search: finding specific handlers or NATS subjects
+- Verification: running tests, checking message flow
+
+**Why**: Fast iteration loop, perfect for understanding how other bots are structured.
+
+### When to Use Sonnet Agents
+
+- Implementing new handlers or business logic
+- Designing complex scheduling and rotation algorithms
+- Multi-handler integrations and chore lifecycle management
+- Refactoring handlers for new requirements
+- Performance optimizations
+
+**Why**: Deep reasoning ensures handlers are correct, rotation logic is fair and maintainable, and state transitions are sound.
+
+### Example: Add Chore Rotation Scheduling
+
+```
+User: "Add fair rotation scheduling based on history"
+  ↓
+1. Haiku (Explore): Read existing schedule_handler.ex and assignment_handler.ex
+  ↓
+2. Sonnet (Plan): Design rotation algorithm, identify fairness criteria, plan state tracking
+   Determine how to handle skipped chores and special cases
+  ↓
+3. Sonnet (Implement): Add rotation logic, update assignment handler, add tests
+  ↓
+4. Haiku (Verify): Run test suite, validate rotation fairness
+```

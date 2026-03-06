@@ -106,10 +106,17 @@ defmodule BotArmyChore.TaskStore do
   def init(_opts) do
     Logger.info("TaskStore started")
     # Load all tasks from database into GenServer state
-    tasks = BotArmyChore.Repo.all(BotArmyChore.Schemas.Task)
-    state = Enum.reduce(tasks, %{}, fn task, acc ->
-      Map.put(acc, task.id |> to_string(), schema_to_map(task))
-    end)
+    # Gracefully handle database unavailability (e.g., in tests)
+    state = try do
+      tasks = BotArmyChore.Repo.all(BotArmyChore.Schemas.Task)
+      Enum.reduce(tasks, %{}, fn task, acc ->
+        Map.put(acc, task.id |> to_string(), schema_to_map(task))
+      end)
+    rescue
+      _ ->
+        Logger.warning("Could not load tasks from database (database unavailable). Starting with empty state.")
+        %{}
+    end
     {:ok, state}
   end
 

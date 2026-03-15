@@ -17,6 +17,8 @@ defmodule BotArmyChore.TaskStore do
   - `list_all/0` - List all tasks including completed
   """
 
+  @behaviour BotArmyChore.TaskStoreBehaviour
+
   use GenServer
   require Logger
 
@@ -33,6 +35,7 @@ defmodule BotArmyChore.TaskStore do
 
   Returns `{:ok, task}` with the created task, or `{:error, reason}`.
   """
+  @impl BotArmyChore.TaskStoreBehaviour
   def create(payload) when is_map(payload) do
     GenServer.call(@server, {:create, payload})
   end
@@ -42,6 +45,7 @@ defmodule BotArmyChore.TaskStore do
 
   Returns `{:ok, task}` with the updated task, or `{:error, reason}`.
   """
+  @impl BotArmyChore.TaskStoreBehaviour
   def update(task_id, payload) when is_binary(task_id) and is_map(payload) do
     GenServer.call(@server, {:update, task_id, payload})
   end
@@ -51,6 +55,7 @@ defmodule BotArmyChore.TaskStore do
 
   Returns `{:ok, task}` with the updated task, or `{:error, reason}`.
   """
+  @impl BotArmyChore.TaskStoreBehaviour
   def start(task_id) when is_binary(task_id) do
     GenServer.call(@server, {:start, task_id})
   end
@@ -60,6 +65,7 @@ defmodule BotArmyChore.TaskStore do
 
   Returns `{:ok, task}` with the completed task, or `{:error, reason}`.
   """
+  @impl BotArmyChore.TaskStoreBehaviour
   def complete(task_id) when is_binary(task_id) do
     GenServer.call(@server, {:complete, task_id})
   end
@@ -69,6 +75,7 @@ defmodule BotArmyChore.TaskStore do
 
   Returns `{:ok, task}` or `{:error, :not_found}`.
   """
+  @impl BotArmyChore.TaskStoreBehaviour
   def get(task_id) when is_binary(task_id) do
     GenServer.call(@server, {:get, task_id})
   end
@@ -78,6 +85,7 @@ defmodule BotArmyChore.TaskStore do
 
   Returns `{:ok, tasks}`.
   """
+  @impl BotArmyChore.TaskStoreBehaviour
   def list do
     GenServer.call(@server, :list)
   end
@@ -87,6 +95,7 @@ defmodule BotArmyChore.TaskStore do
 
   Returns `{:ok, tasks}`.
   """
+  @impl BotArmyChore.TaskStoreBehaviour
   def list_all do
     GenServer.call(@server, :list_all)
   end
@@ -105,6 +114,7 @@ defmodule BotArmyChore.TaskStore do
 
   Returns list of tasks with frequency != "once" and next_due_at <= now.
   """
+  @impl BotArmyChore.TaskStoreBehaviour
   def list_overdue_recurring do
     GenServer.call(@server, :list_overdue_recurring)
   end
@@ -114,8 +124,20 @@ defmodule BotArmyChore.TaskStore do
 
   Returns `{:ok, task}` with the updated task, or `{:error, reason}`.
   """
+  @impl BotArmyChore.TaskStoreBehaviour
   def set_next_due(task_id, next_due_at) when is_binary(task_id) and is_struct(next_due_at, DateTime) do
     GenServer.call(@server, {:set_next_due, task_id, next_due_at})
+  end
+
+  @doc """
+  Set the notification level for a task.
+
+  Returns `{:ok, task}` with the updated task, or `{:error, reason}`.
+  """
+  @impl BotArmyChore.TaskStoreBehaviour
+  def set_notification_level(task_id, level, notified_at \\ DateTime.utc_now())
+      when is_binary(task_id) and is_integer(level) and is_struct(notified_at, DateTime) do
+    GenServer.call(@server, {:set_notification_level, task_id, level, notified_at})
   end
 
   # Callbacks
@@ -378,6 +400,39 @@ defmodule BotArmyChore.TaskStore do
     end
   end
 
+  @impl true
+  def handle_call({:set_notification_level, task_id, level, notified_at}, _from, state) do
+    case Map.get(state, task_id) do
+      nil ->
+        {:reply, {:error, :not_found}, state}
+
+      _task ->
+        task_uuid = Ecto.UUID.cast!(task_id)
+        db_task = BotArmyChore.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
+
+        if db_task do
+          changeset = BotArmyChore.Schemas.Task.changeset(
+            db_task,
+            %{"notification_level" => level, "last_notified_at" => notified_at}
+          )
+
+          case BotArmyChore.Repo.update(changeset) do
+            {:ok, updated_db_task} ->
+              updated_task = schema_to_map(updated_db_task)
+              new_state = Map.put(state, task_id, updated_task)
+              Logger.info("Updated notification_level for task: #{task_id}")
+              {:reply, {:ok, updated_task}, new_state}
+
+            {:error, changeset} ->
+              Logger.error("Failed to set notification_level: #{inspect(changeset.errors)}")
+              {:reply, {:error, :database_error}, state}
+          end
+        else
+          {:reply, {:error, :not_found}, state}
+        end
+    end
+  end
+
   # Helper function to convert Ecto schema to map for GenServer state
   defp schema_to_map(%BotArmyChore.Schemas.Task{} = task) do
     %{
@@ -393,6 +448,8 @@ defmodule BotArmyChore.TaskStore do
       "completed_at" => if(task.completed_at, do: task.completed_at |> NaiveDateTime.to_iso8601(), else: nil),
       "next_due_at" => if(task.next_due_at, do: task.next_due_at |> DateTime.to_iso8601(), else: nil),
       "last_completed_at" => if(task.last_completed_at, do: task.last_completed_at |> DateTime.to_iso8601(), else: nil),
+      "notification_level" => task.notification_level || 0,
+      "last_notified_at" => if(task.last_notified_at, do: task.last_notified_at |> DateTime.to_iso8601(), else: nil),
       "created_at" => task.inserted_at |> NaiveDateTime.to_iso8601(),
       "updated_at" => task.updated_at |> NaiveDateTime.to_iso8601()
     }

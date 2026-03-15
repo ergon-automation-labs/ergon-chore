@@ -73,6 +73,8 @@ defmodule BotArmyChore.NATS.Publisher do
       "chore.task.created" -> "events.chore.task.created"
       "chore.task.assigned" -> "events.chore.task.assigned"
       "chore.task.completed" -> "events.chore.task.completed"
+      "chore.task.due" -> "events.chore.task.due"
+      "chore.task.notification" -> "events.chore.task.notification"
       "chore.error" -> "events.chore.error"
       _ -> "events.chore.unknown"
     end

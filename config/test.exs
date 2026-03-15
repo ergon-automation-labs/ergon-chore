@@ -1,7 +1,7 @@
 import Config
 
-# Test against Kubernetes PostgreSQL (via NodePort)
-# Uses same configuration as production, just with test database
+config :bot_army_chore, :task_store, BotArmyChore.TaskStoreMock
+
 config :bot_army_chore, BotArmyChore.Repo,
   database: System.get_env("BOT_ARMY_CHORE_DB_NAME", "bot_army_chore_test"),
   hostname: System.get_env("BOT_ARMY_CHORE_DB_HOST", "localhost"),

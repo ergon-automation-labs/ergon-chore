@@ -23,8 +23,15 @@ defmodule BotArmyChore.Handlers.TaskHandler do
 
     case validate_create_payload(payload) do
       :ok ->
-        Logger.info("Chore task created: event_id=#{event_id}")
-        publish_event("chore.task.created", payload, event_id)
+        case task_store().create(payload) do
+          {:ok, task} ->
+            Logger.info("Chore task created: event_id=#{event_id}, task_id=#{task["id"]}")
+            publish_event("chore.task.created", Map.put(payload, "task_id", task["id"]), event_id)
+
+          {:error, reason} ->
+            Logger.warning("Failed to persist chore task: #{inspect(reason)}")
+            publish_error(event_id, reason, "Failed to persist chore task")
+        end
 
       {:error, reason} ->
         Logger.warning("Invalid chore task payload: #{inspect(reason)}")
@@ -43,8 +50,19 @@ defmodule BotArmyChore.Handlers.TaskHandler do
 
     case validate_assign_payload(payload) do
       :ok ->
-        Logger.info("Chore task assigned: event_id=#{event_id}")
-        publish_event("chore.task.assigned", payload, event_id)
+        case task_store().update(payload["task_id"], %{"assigned_to" => payload["assigned_to"]}) do
+          {:ok, _task} ->
+            Logger.info("Chore task assigned: event_id=#{event_id}, task_id=#{payload["task_id"]}")
+            publish_event("chore.task.assigned", payload, event_id)
+
+          {:error, :not_found} ->
+            Logger.warning("Task not found: #{payload["task_id"]}")
+            publish_error(event_id, :not_found, "Task not found")
+
+          {:error, reason} ->
+            Logger.warning("Failed to assign task: #{inspect(reason)}")
+            publish_error(event_id, reason, "Failed to assign task")
+        end
 
       {:error, reason} ->
         Logger.warning("Invalid chore assignment payload: #{inspect(reason)}")
@@ -92,8 +110,20 @@ defmodule BotArmyChore.Handlers.TaskHandler do
 
     case validate_complete_payload(payload) do
       :ok ->
-        Logger.info("Chore task completed: event_id=#{event_id}")
-        publish_event("chore.task.completed", payload, event_id)
+        case task_store().complete(payload["task_id"]) do
+          {:ok, task} ->
+            Logger.info("Chore task completed: event_id=#{event_id}, task_id=#{payload["task_id"]}")
+            advance_recurring_task(task)
+            publish_event("chore.task.completed", payload, event_id)
+
+          {:error, :not_found} ->
+            Logger.warning("Task not found: #{payload["task_id"]}")
+            publish_error(event_id, :not_found, "Task not found")
+
+          {:error, reason} ->
+            Logger.warning("Failed to complete task: #{inspect(reason)}")
+            publish_error(event_id, reason, "Failed to complete task")
+        end
 
       {:error, reason} ->
         Logger.warning("Invalid chore completion payload: #{inspect(reason)}")
@@ -105,7 +135,8 @@ defmodule BotArmyChore.Handlers.TaskHandler do
 
   defp validate_create_payload(payload) when is_map(payload) do
     with :ok <- require_field(payload, "title"),
-         :ok <- require_field(payload, "frequency") do
+         :ok <- require_field(payload, "frequency"),
+         :ok <- require_field(payload, "category") do
       :ok
     end
   end
@@ -216,4 +247,18 @@ defmodule BotArmyChore.Handlers.TaskHandler do
   defp get_node_name do
     node() |> Atom.to_string()
   end
+
+  defp advance_recurring_task(%{"frequency" => freq, "id" => id}) when freq not in [nil, "once"] do
+    task_store().set_next_due(id, compute_next_due(freq))
+  end
+
+  defp advance_recurring_task(_), do: :ok
+
+  defp compute_next_due("daily"),   do: DateTime.add(DateTime.utc_now(), 1, :day)
+  defp compute_next_due("weekly"),  do: DateTime.add(DateTime.utc_now(), 7, :day)
+  defp compute_next_due("monthly"), do: DateTime.add(DateTime.utc_now(), 30, :day)
+  defp compute_next_due("yearly"),  do: DateTime.add(DateTime.utc_now(), 365, :day)
+  defp compute_next_due(_),         do: DateTime.add(DateTime.utc_now(), 7, :day)
+
+  defp task_store, do: Application.get_env(:bot_army_chore, :task_store, BotArmyChore.TaskStore)
 end

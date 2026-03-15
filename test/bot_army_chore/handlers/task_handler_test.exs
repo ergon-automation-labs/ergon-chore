@@ -1,5 +1,24 @@
 defmodule BotArmyChore.Handlers.TaskHandlerTest do
   use ExUnit.Case
+  import Mox
+
+  setup :set_mox_global
+
+  setup do
+    stub(BotArmyChore.TaskStoreMock, :create, fn _payload ->
+      {:ok, %{"id" => UUID.uuid4(), "title" => "test task"}}
+    end)
+    stub(BotArmyChore.TaskStoreMock, :update, fn _task_id, _payload ->
+      {:ok, %{"id" => UUID.uuid4(), "title" => "test task"}}
+    end)
+    stub(BotArmyChore.TaskStoreMock, :complete, fn _task_id ->
+      {:ok, %{"id" => UUID.uuid4(), "title" => "test task", "frequency" => "once"}}
+    end)
+    stub(BotArmyChore.TaskStoreMock, :set_next_due, fn _task_id, _next_due ->
+      {:ok, %{"id" => UUID.uuid4(), "title" => "test task"}}
+    end)
+    :ok
+  end
 
   describe "handle_create/1" do
     test "successfully creates a chore task" do

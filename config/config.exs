@@ -29,3 +29,8 @@ config :bot_army_chore, BotArmyChore.Repo,
   username: System.get_env("BOT_ARMY_CHORE_DB_USER") || System.get_env("DATABASE_USER", "postgres"),
   password: System.get_env("BOT_ARMY_CHORE_DB_PASSWORD") || System.get_env("DATABASE_PASSWORD", "postgres"),
   pool_size: 10
+
+# Import environment-specific config
+if File.exists?("config/#{Mix.env()}.exs") do
+  import_config "#{Mix.env()}.exs"
+end

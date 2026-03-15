@@ -100,6 +100,24 @@ defmodule BotArmyChore.TaskStore do
     GenServer.call(@server, :clear)
   end
 
+  @doc """
+  List all recurring tasks that are overdue.
+
+  Returns list of tasks with frequency != "once" and next_due_at <= now.
+  """
+  def list_overdue_recurring do
+    GenServer.call(@server, :list_overdue_recurring)
+  end
+
+  @doc """
+  Set the next due date for a recurring task.
+
+  Returns `{:ok, task}` with the updated task, or `{:error, reason}`.
+  """
+  def set_next_due(task_id, next_due_at) when is_binary(task_id) and is_struct(next_due_at, DateTime) do
+    GenServer.call(@server, {:set_next_due, task_id, next_due_at})
+  end
+
   # Callbacks
 
   @impl true
@@ -311,6 +329,55 @@ defmodule BotArmyChore.TaskStore do
     {:reply, :ok, %{}}
   end
 
+  @impl true
+  def handle_call(:list_overdue_recurring, _from, state) do
+    now = DateTime.utc_now()
+    tasks = state
+      |> Map.values()
+      |> Enum.filter(fn t ->
+        t["frequency"] != "once" &&
+        t["next_due_at"] != nil &&
+        case DateTime.from_iso8601(t["next_due_at"]) do
+          {:ok, due_dt, _} -> DateTime.compare(due_dt, now) != :gt
+          _ -> false
+        end
+      end)
+    {:reply, tasks, state}
+  end
+
+  @impl true
+  def handle_call({:set_next_due, task_id, next_due_at}, _from, state) do
+    case Map.get(state, task_id) do
+      nil ->
+        {:reply, {:error, :not_found}, state}
+
+      _task ->
+        task_uuid = Ecto.UUID.cast!(task_id)
+        db_task = BotArmyChore.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
+
+        if db_task do
+          changeset = BotArmyChore.Schemas.Task.changeset(
+            db_task,
+            %{"next_due_at" => next_due_at}
+          )
+
+          case BotArmyChore.Repo.update(changeset) do
+            {:ok, updated_db_task} ->
+              updated_task = schema_to_map(updated_db_task)
+              new_state = Map.put(state, task_id, updated_task)
+              Logger.info("Updated next_due_at for task: #{task_id}")
+              {:reply, {:ok, updated_task}, new_state}
+
+            {:error, changeset} ->
+              Logger.error("Failed to set next_due_at: #{inspect(changeset.errors)}")
+              {:reply, {:error, :database_error}, state}
+          end
+        else
+          {:reply, {:error, :not_found}, state}
+        end
+    end
+  end
+
   # Helper function to convert Ecto schema to map for GenServer state
   defp schema_to_map(%BotArmyChore.Schemas.Task{} = task) do
     %{
@@ -324,6 +391,8 @@ defmodule BotArmyChore.TaskStore do
       "location" => task.location,
       "status" => task.status,
       "completed_at" => if(task.completed_at, do: task.completed_at |> NaiveDateTime.to_iso8601(), else: nil),
+      "next_due_at" => if(task.next_due_at, do: task.next_due_at |> DateTime.to_iso8601(), else: nil),
+      "last_completed_at" => if(task.last_completed_at, do: task.last_completed_at |> DateTime.to_iso8601(), else: nil),
       "created_at" => task.inserted_at |> NaiveDateTime.to_iso8601(),
       "updated_at" => task.updated_at |> NaiveDateTime.to_iso8601()
     }

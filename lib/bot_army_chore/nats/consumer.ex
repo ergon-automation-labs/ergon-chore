@@ -26,9 +26,16 @@ defmodule BotArmyChore.NATS.Consumer do
   use GenServer
   require Logger
 
-  @nats_url System.get_env("NATS_URL", "nats://localhost:4222")
   @reconnect_delay_ms 5000
-  @max_reconnect_retries 10
+
+  @subjects [
+    "chore.task.create",
+    "chore.task.assign",
+    "chore.task.complete",
+    "chore.schedule.list",
+    "chore.assignment.rotate",
+    "chore.assignment.list"
+  ]
 
   # API
 
@@ -44,12 +51,36 @@ defmodule BotArmyChore.NATS.Consumer do
 
     state = %{
       subscriptions: [],
-      reconnect_attempt: 0,
+      conn: nil,
       opts: opts
     }
 
-    Logger.info("Chore NATS consumer initialized, ready to receive messages from NATS broker")
-    {:ok, state}
+    {:ok, state, {:continue, :subscribe}}
+  end
+
+  @impl true
+  def handle_continue(:subscribe, state) do
+    case GenServer.call(BotArmyRuntime.NATS.Connection, :get_connection, 5_000) do
+      {:ok, conn} ->
+        Logger.info("Connected to NATS, subscribing to chore topics")
+
+        Enum.each(@subjects, fn subject ->
+          Gnat.sub(conn, self(), subject)
+          Logger.info("Chore consumer subscribed to #{subject}")
+        end)
+
+        {:noreply, %{state | conn: conn}}
+
+      {:error, reason} ->
+        Logger.warning("Failed to get NATS connection: #{inspect(reason)}, retrying in #{@reconnect_delay_ms}ms")
+        Process.send_after(self(), :retry_subscribe, @reconnect_delay_ms)
+        {:noreply, state}
+    end
+  end
+
+  @impl true
+  def handle_info(:retry_subscribe, state) do
+    {:noreply, state, {:continue, :subscribe}}
   end
 
   @impl true
@@ -58,7 +89,7 @@ defmodule BotArmyChore.NATS.Consumer do
 
     case BotArmyCore.NATS.Decoder.decode(msg.body) do
       {:ok, decoded_message} ->
-        route_message(decoded_message)
+        route_message(decoded_message, msg)
 
       {:error, reason} ->
         Logger.warning("Failed to decode message from #{msg.topic}: #{inspect(reason)}")
@@ -91,14 +122,70 @@ defmodule BotArmyChore.NATS.Consumer do
   @doc """
   Route decoded message to appropriate handler based on event type.
   """
-  def route_message(message) do
+  def route_message(message, nats_msg) do
     event = message["event"]
 
     case event do
       "chore.task.create" -> BotArmyChore.Handlers.TaskHandler.handle_create(message)
       "chore.task.assign" -> BotArmyChore.Handlers.TaskHandler.handle_assign(message)
       "chore.task.complete" -> BotArmyChore.Handlers.TaskHandler.handle_complete(message)
+      "chore.schedule.list" -> handle_schedule_list(nats_msg)
+      "chore.assignment.rotate" -> BotArmyChore.Handlers.TaskHandler.handle_rotate(message)
+      "chore.assignment.list" -> handle_assignment_list(nats_msg)
       _ -> Logger.debug("Unknown Chore event type: #{event}")
+    end
+end
+
+  defp handle_schedule_list(nats_msg) do
+    if nats_msg.reply_to do
+      tasks = BotArmyChore.TaskStore.list_overdue_recurring()
+      task_list = Enum.map(tasks, fn t ->
+        %{
+          "id" => t["id"],
+          "title" => t["title"],
+          "frequency" => t["frequency"],
+          "next_due_at" => t["next_due_at"],
+          "assigned_to" => t["assigned_to"]
+        }
+      end)
+
+      response = %{
+        "tasks" => task_list
+      }
+
+      case GenServer.call(BotArmyRuntime.NATS.Connection, :get_connection, 5_000) do
+        {:ok, conn} ->
+          Gnat.pub(conn, nats_msg.reply_to, Jason.encode!(response))
+          Logger.debug("Published schedule list response")
+
+        {:error, reason} ->
+          Logger.warning("Failed to publish schedule list: #{inspect(reason)}")
+      end
+    end
+  end
+
+  defp handle_assignment_list(nats_msg) do
+    if nats_msg.reply_to do
+      {:ok, tasks} = BotArmyChore.TaskStore.list()
+      members = Application.get_env(:bot_army_chore, :household_members, [])
+
+      assignments = Enum.reduce(members, %{}, fn member, acc ->
+        member_tasks = Enum.filter(tasks, &(&1["assigned_to"] == member))
+        Map.put(acc, member, member_tasks)
+      end)
+
+      response = %{
+        "assignments" => assignments
+      }
+
+      case GenServer.call(BotArmyRuntime.NATS.Connection, :get_connection, 5_000) do
+        {:ok, conn} ->
+          Gnat.pub(conn, nats_msg.reply_to, Jason.encode!(response))
+          Logger.debug("Published assignment list response")
+
+        {:error, reason} ->
+          Logger.warning("Failed to publish assignment list: #{inspect(reason)}")
+      end
     end
   end
 end

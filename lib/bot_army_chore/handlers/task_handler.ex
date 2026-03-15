@@ -53,6 +53,35 @@ defmodule BotArmyChore.Handlers.TaskHandler do
   end
 
   @doc """
+  Handle chore assignment rotation event.
+
+  Rotates the assignment to the next household member and updates the task.
+  """
+  def handle_rotate(message) do
+    event_id = message["event_id"]
+    payload = message["payload"]
+
+    case validate_rotate_payload(payload) do
+      :ok ->
+        task_id = payload["task_id"]
+
+        case rotate_assignment(task_id) do
+          {:ok, next_person} ->
+            Logger.info("Chore rotated: event_id=#{event_id}, task_id=#{task_id}, assigned_to=#{next_person}")
+            publish_event("chore.task.assigned", %{"task_id" => task_id, "assigned_to" => next_person}, event_id)
+
+          {:error, reason} ->
+            Logger.warning("Failed to rotate assignment: #{inspect(reason)}")
+            publish_error(event_id, reason, "Failed to rotate assignment")
+        end
+
+      {:error, reason} ->
+        Logger.warning("Invalid rotation payload: #{inspect(reason)}")
+        publish_error(event_id, reason, "Invalid rotation data")
+    end
+  end
+
+  @doc """
   Handle chore completion event.
 
   Validates the completion data and publishes a task.completed event.
@@ -91,6 +120,39 @@ defmodule BotArmyChore.Handlers.TaskHandler do
   end
 
   defp validate_assign_payload(_), do: {:error, :invalid_payload}
+
+  defp validate_rotate_payload(payload) when is_map(payload) do
+    require_field(payload, "task_id")
+  end
+
+  defp validate_rotate_payload(_), do: {:error, :invalid_payload}
+
+  defp rotate_assignment(task_id) do
+    members = Application.get_env(:bot_army_chore, :household_members, [])
+
+    case BotArmyChore.TaskStore.get(task_id) do
+      {:ok, task} ->
+        current_person = task["assigned_to"]
+        next_person = get_next_member(current_person, members)
+
+        case BotArmyChore.TaskStore.update(task_id, %{"assigned_to" => next_person}) do
+          {:ok, _} -> {:ok, next_person}
+          {:error, reason} -> {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp get_next_member(current, members) when is_list(members) and length(members) > 0 do
+    case Enum.find_index(members, &(&1 == current)) do
+      nil -> List.first(members)
+      idx -> Enum.at(members, rem(idx + 1, length(members)))
+    end
+  end
+
+  defp get_next_member(_, _), do: nil
 
   defp validate_complete_payload(payload) when is_map(payload) do
     require_field(payload, "task_id")

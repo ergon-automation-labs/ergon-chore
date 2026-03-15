@@ -18,6 +18,8 @@ defmodule BotArmyChore.Schemas.Task do
     field :status, :string, default: "pending"
     field :location, :string
     field :completed_at, :naive_datetime
+    field :next_due_at, :utc_datetime_usec
+    field :last_completed_at, :utc_datetime_usec
 
     timestamps()
   end
@@ -25,7 +27,7 @@ defmodule BotArmyChore.Schemas.Task do
   @doc false
   def changeset(task, attrs) do
     task
-    |> cast(attrs, [:title, :category, :frequency, :assigned_to, :priority, :due_date, :status, :location, :completed_at])
+    |> cast(attrs, [:title, :category, :frequency, :assigned_to, :priority, :due_date, :status, :location, :completed_at, :next_due_at, :last_completed_at])
     |> validate_required([:title, :category])
     |> validate_inclusion(:status, ["pending", "in_progress", "completed", "archived"])
     |> validate_inclusion(:priority, ["low", "normal", "high"])

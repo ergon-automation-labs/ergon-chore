@@ -14,6 +14,9 @@ if File.exists?(".env") do
   end)
 end
 
+# Chore bot configuration
+config :bot_army_chore, :household_members, ["Alice", "Bob", "Charlie"]
+
 # Ecto repositories for migrations
 config :bot_army_chore, ecto_repos: [BotArmyChore.Repo]
 

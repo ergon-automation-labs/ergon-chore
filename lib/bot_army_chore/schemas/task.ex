@@ -32,7 +32,7 @@ defmodule BotArmyChore.Schemas.Task do
   def changeset(task, attrs) do
     task
     |> cast(attrs, [:title, :category, :frequency, :assigned_to, :priority, :due_date, :status, :location, :completed_at, :next_due_at, :last_completed_at, :notification_level, :last_notified_at, :tenant_id, :user_id])
-    |> validate_required([:title, :category])
+    |> validate_required([:title, :category, :tenant_id])
     |> validate_inclusion(:status, ["pending", "in_progress", "completed", "archived"])
     |> validate_inclusion(:priority, ["low", "normal", "high"])
     |> validate_inclusion(:frequency, ["once", "daily", "weekly", "monthly", "yearly"])

@@ -202,6 +202,8 @@ defmodule BotArmyChore.Handlers.TaskHandlerTest do
       "source_node" => "test_node",
       "triggered_by" => "manual",
       "schema_version" => "1.0",
+      "tenant_id" => "00000000-0000-0000-0000-000000000001",
+      "user_id" => nil,
       "payload" => %{
         "title" => "Wash dishes",
         "frequency" => "daily",
@@ -220,6 +222,8 @@ defmodule BotArmyChore.Handlers.TaskHandlerTest do
       "source_node" => "test_node",
       "triggered_by" => "manual",
       "schema_version" => "1.0",
+      "tenant_id" => "00000000-0000-0000-0000-000000000001",
+      "user_id" => nil,
       "payload" => %{
         "task_id" => UUID.uuid4(),
         "assigned_to" => "Alice"
@@ -236,6 +240,8 @@ defmodule BotArmyChore.Handlers.TaskHandlerTest do
       "source_node" => "test_node",
       "triggered_by" => "manual",
       "schema_version" => "1.0",
+      "tenant_id" => "00000000-0000-0000-0000-000000000001",
+      "user_id" => nil,
       "payload" => %{
         "task_id" => UUID.uuid4()
       }

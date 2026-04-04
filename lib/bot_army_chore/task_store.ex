@@ -71,33 +71,33 @@ defmodule BotArmyChore.TaskStore do
   end
 
   @doc """
-  Retrieve a task by ID.
+  Retrieve a task by ID, scoped to a tenant.
 
   Returns `{:ok, task}` or `{:error, :not_found}`.
   """
   @impl BotArmyChore.TaskStoreBehaviour
-  def get(task_id) when is_binary(task_id) do
-    GenServer.call(@server, {:get, task_id})
+  def get(tenant_id, task_id) when is_binary(tenant_id) and is_binary(task_id) do
+    GenServer.call(@server, {:get, tenant_id, task_id})
   end
 
   @doc """
-  List all pending and in_progress tasks.
+  List all pending and in_progress tasks for a tenant.
 
   Returns `{:ok, tasks}`.
   """
   @impl BotArmyChore.TaskStoreBehaviour
-  def list do
-    GenServer.call(@server, :list)
+  def list(tenant_id) when is_binary(tenant_id) do
+    GenServer.call(@server, {:list, tenant_id})
   end
 
   @doc """
-  List all tasks including completed.
+  List all tasks including completed for a tenant.
 
   Returns `{:ok, tasks}`.
   """
   @impl BotArmyChore.TaskStoreBehaviour
-  def list_all do
-    GenServer.call(@server, :list_all)
+  def list_all(tenant_id) when is_binary(tenant_id) do
+    GenServer.call(@server, {:list_all, tenant_id})
   end
 
   @doc """
@@ -110,13 +110,13 @@ defmodule BotArmyChore.TaskStore do
   end
 
   @doc """
-  List all recurring tasks that are overdue.
+  List all recurring tasks that are overdue for a tenant.
 
   Returns list of tasks with frequency != "once" and next_due_at <= now.
   """
   @impl BotArmyChore.TaskStoreBehaviour
-  def list_overdue_recurring do
-    GenServer.call(@server, :list_overdue_recurring)
+  def list_overdue_recurring(tenant_id) when is_binary(tenant_id) do
+    GenServer.call(@server, {:list_overdue_recurring, tenant_id})
   end
 
   @doc """
@@ -178,6 +178,8 @@ defmodule BotArmyChore.TaskStore do
     changeset = BotArmyChore.Schemas.Task.changeset(
       %BotArmyChore.Schemas.Task{id: task_id},
       %{
+        "tenant_id" => payload["tenant_id"],
+        "user_id" => Map.get(payload, "user_id"),
         "title" => payload["title"],
         "category" => payload["category"],
         "frequency" => Map.get(payload, "frequency", "once"),
@@ -324,24 +326,33 @@ defmodule BotArmyChore.TaskStore do
   end
 
   @impl true
-  def handle_call({:get, task_id}, _from, state) do
+  def handle_call({:get, tenant_id, task_id}, _from, state) do
     case Map.get(state, task_id) do
-      nil -> {:reply, {:error, :not_found}, state}
-      task -> {:reply, {:ok, task}, state}
+      nil ->
+        {:reply, {:error, :not_found}, state}
+
+      task ->
+        if task["tenant_id"] == tenant_id do
+          {:reply, {:ok, task}, state}
+        else
+          {:reply, {:error, :not_found}, state}
+        end
     end
   end
 
   @impl true
-  def handle_call(:list, _from, state) do
+  def handle_call({:list, tenant_id}, _from, state) do
     tasks = state
       |> Map.values()
-      |> Enum.filter(fn t -> t["status"] in ["pending", "in_progress"] end)
+      |> Enum.filter(fn t -> t["tenant_id"] == tenant_id && t["status"] in ["pending", "in_progress"] end)
     {:reply, {:ok, tasks}, state}
   end
 
   @impl true
-  def handle_call(:list_all, _from, state) do
-    tasks = Map.values(state)
+  def handle_call({:list_all, tenant_id}, _from, state) do
+    tasks = state
+      |> Map.values()
+      |> Enum.filter(fn t -> t["tenant_id"] == tenant_id end)
     {:reply, {:ok, tasks}, state}
   end
 
@@ -352,11 +363,12 @@ defmodule BotArmyChore.TaskStore do
   end
 
   @impl true
-  def handle_call(:list_overdue_recurring, _from, state) do
+  def handle_call({:list_overdue_recurring, tenant_id}, _from, state) do
     now = DateTime.utc_now()
     tasks = state
       |> Map.values()
       |> Enum.filter(fn t ->
+        t["tenant_id"] == tenant_id &&
         t["frequency"] != "once" &&
         t["next_due_at"] != nil &&
         case DateTime.from_iso8601(t["next_due_at"]) do
@@ -437,6 +449,8 @@ defmodule BotArmyChore.TaskStore do
   defp schema_to_map(%BotArmyChore.Schemas.Task{} = task) do
     %{
       "id" => Ecto.UUID.cast!(task.id) |> to_string(),
+      "tenant_id" => task.tenant_id |> to_string(),
+      "user_id" => if(task.user_id, do: task.user_id |> to_string(), else: nil),
       "title" => task.title,
       "category" => task.category,
       "frequency" => task.frequency,

@@ -9,9 +9,12 @@ defmodule BotArmyChore.Scheduler do
   use GenServer
   require Logger
 
-  @tier1_hours 24    # first reminder (1 day overdue)
-  @tier2_hours 72    # second reminder (3 days overdue)
-  @tier3_hours 168   # escalated (1 week overdue)
+  # first reminder (1 day overdue)
+  @tier1_hours 24
+  # second reminder (3 days overdue)
+  @tier2_hours 72
+  # escalated (1 week overdue)
+  @tier3_hours 168
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -40,14 +43,17 @@ defmodule BotArmyChore.Scheduler do
   defp ms_until_next_midnight do
     now = DateTime.utc_now()
     # Calculate tomorrow at 00:00:00 UTC
-    tomorrow_at_midnight = now
+    tomorrow_at_midnight =
+      now
       |> DateTime.add(1, :day)
       |> then(fn dt -> DateTime.new!(DateTime.to_date(dt), ~T[00:00:00], "Etc/UTC") end)
+
     DateTime.diff(tomorrow_at_midnight, now, :millisecond)
   end
 
   defp check_overdue_recurring do
-    tasks = BotArmyChore.TaskStore.list_overdue_recurring()
+    tenant_id = BotArmyCore.Tenant.default_tenant_id()
+    tasks = BotArmyChore.TaskStore.list_overdue_recurring(tenant_id)
     Logger.info("Found #{length(tasks)} overdue recurring tasks")
     now = DateTime.utc_now()
 
@@ -59,13 +65,17 @@ defmodule BotArmyChore.Scheduler do
         hours >= @tier3_hours and level < 3 ->
           publish_notification(task, 3, "urgent")
           BotArmyChore.TaskStore.set_notification_level(task["id"], 3, now)
+
         hours >= @tier2_hours and level < 2 ->
           publish_notification(task, 2, "overdue")
           BotArmyChore.TaskStore.set_notification_level(task["id"], 2, now)
+
         hours >= @tier1_hours and level < 1 ->
           publish_notification(task, 1, "due")
           BotArmyChore.TaskStore.set_notification_level(task["id"], 1, now)
-        true -> :ok
+
+        true ->
+          :ok
       end
     end)
   end
@@ -76,6 +86,7 @@ defmodule BotArmyChore.Scheduler do
       _ -> 0
     end
   end
+
   defp hours_overdue(_, _), do: 0
 
   defp publish_notification(task, level, urgency) do
@@ -97,6 +108,7 @@ defmodule BotArmyChore.Scheduler do
         "next_due_at" => task["next_due_at"]
       }
     }
+
     BotArmyChore.NATS.Publisher.publish(event_data)
   end
 

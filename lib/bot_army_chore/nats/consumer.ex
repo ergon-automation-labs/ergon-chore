@@ -62,6 +62,7 @@ defmodule BotArmyChore.NATS.Consumer do
   def handle_continue(:subscribe, state) do
     case GenServer.call(BotArmyRuntime.NATS.Connection, :get_connection, 5_000) do
       {:ok, conn} ->
+        BotArmyRuntime.NATS.Connection.subscribe_to_status()
         Logger.info("Connected to NATS, subscribing to chore topics")
 
         Enum.each(@subjects, fn subject ->
@@ -72,7 +73,10 @@ defmodule BotArmyChore.NATS.Consumer do
         {:noreply, %{state | conn: conn}}
 
       {:error, reason} ->
-        Logger.warning("Failed to get NATS connection: #{inspect(reason)}, retrying in #{@reconnect_delay_ms}ms")
+        Logger.warning(
+          "Failed to get NATS connection: #{inspect(reason)}, retrying in #{@reconnect_delay_ms}ms"
+        )
+
         Process.send_after(self(), :retry_subscribe, @reconnect_delay_ms)
         {:noreply, state}
     end
@@ -85,15 +89,17 @@ defmodule BotArmyChore.NATS.Consumer do
 
   @impl true
   def handle_info({:msg, msg}, state) do
-    Logger.debug("Received NATS message on subject: #{msg.topic}")
+    BotArmyRuntime.Tracing.with_consumer_span(msg.topic, msg.headers, fn ->
+      Logger.debug("Received NATS message on subject: #{msg.topic}")
 
-    case BotArmyCore.NATS.Decoder.decode(msg.body) do
-      {:ok, decoded_message} ->
-        route_message(decoded_message, msg)
+      case BotArmyCore.NATS.Decoder.decode(msg.body) do
+        {:ok, decoded_message} ->
+          route_message(decoded_message, msg)
 
-      {:error, reason} ->
-        Logger.warning("Failed to decode message from #{msg.topic}: #{inspect(reason)}")
-    end
+        {:error, reason} ->
+          Logger.warning("Failed to decode message from #{msg.topic}: #{inspect(reason)}")
+      end
+    end)
 
     {:noreply, state}
   end
@@ -101,20 +107,20 @@ defmodule BotArmyChore.NATS.Consumer do
   @impl true
   def handle_info(:reconnect, state) do
     Logger.info("Attempting to reconnect to NATS")
-    {:noreply, state, {:continue, :connect}}
+    {:noreply, state, {:continue, :subscribe}}
   end
 
   @impl true
   def handle_info({:nats, :disconnected}, state) do
     Logger.warning("Disconnected from NATS, will reconnect")
     Process.send_after(self(), :reconnect, @reconnect_delay_ms)
-    {:noreply, %{state | connection: nil}}
+    {:noreply, %{state | conn: nil, subscriptions: []}}
   end
 
   @impl true
   def handle_info({:nats, :connected}, state) do
-    Logger.info("Reconnected to NATS")
-    {:noreply, state}
+    Logger.info("Reconnected to NATS, re-subscribing")
+    {:noreply, state, {:continue, :subscribe}}
   end
 
   # Private functions
@@ -134,20 +140,22 @@ defmodule BotArmyChore.NATS.Consumer do
       "chore.assignment.list" -> handle_assignment_list(nats_msg)
       _ -> Logger.debug("Unknown Chore event type: #{event}")
     end
-end
+  end
 
   defp handle_schedule_list(nats_msg) do
     if nats_msg.reply_to do
       tasks = BotArmyChore.TaskStore.list_overdue_recurring()
-      task_list = Enum.map(tasks, fn t ->
-        %{
-          "id" => t["id"],
-          "title" => t["title"],
-          "frequency" => t["frequency"],
-          "next_due_at" => t["next_due_at"],
-          "assigned_to" => t["assigned_to"]
-        }
-      end)
+
+      task_list =
+        Enum.map(tasks, fn t ->
+          %{
+            "id" => t["id"],
+            "title" => t["title"],
+            "frequency" => t["frequency"],
+            "next_due_at" => t["next_due_at"],
+            "assigned_to" => t["assigned_to"]
+          }
+        end)
 
       response = %{
         "tasks" => task_list
@@ -169,10 +177,11 @@ end
       {:ok, tasks} = BotArmyChore.TaskStore.list()
       members = Application.get_env(:bot_army_chore, :household_members, [])
 
-      assignments = Enum.reduce(members, %{}, fn member, acc ->
-        member_tasks = Enum.filter(tasks, &(&1["assigned_to"] == member))
-        Map.put(acc, member, member_tasks)
-      end)
+      assignments =
+        Enum.reduce(members, %{}, fn member, acc ->
+          member_tasks = Enum.filter(tasks, &(&1["assigned_to"] == member))
+          Map.put(acc, member, member_tasks)
+        end)
 
       response = %{
         "assignments" => assignments

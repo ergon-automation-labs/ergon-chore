@@ -125,7 +125,8 @@ defmodule BotArmyChore.TaskStore do
   Returns `{:ok, task}` with the updated task, or `{:error, reason}`.
   """
   @impl BotArmyChore.TaskStoreBehaviour
-  def set_next_due(task_id, next_due_at) when is_binary(task_id) and is_struct(next_due_at, DateTime) do
+  def set_next_due(task_id, next_due_at)
+      when is_binary(task_id) and is_struct(next_due_at, DateTime) do
     GenServer.call(@server, {:set_next_due, task_id, next_due_at})
   end
 
@@ -147,16 +148,22 @@ defmodule BotArmyChore.TaskStore do
     Logger.info("TaskStore started")
     # Load all tasks from database into GenServer state
     # Gracefully handle database unavailability (e.g., in tests)
-    state = try do
-      tasks = BotArmyChore.Repo.all(BotArmyChore.Schemas.Task)
-      Enum.reduce(tasks, %{}, fn task, acc ->
-        Map.put(acc, task.id |> to_string(), schema_to_map(task))
-      end)
-    rescue
-      _ ->
-        Logger.warning("Could not load tasks from database (database unavailable). Starting with empty state.")
-        %{}
-    end
+    state =
+      try do
+        tasks = BotArmyChore.Repo.all(BotArmyChore.Schemas.Task)
+
+        Enum.reduce(tasks, %{}, fn task, acc ->
+          Map.put(acc, task.id |> to_string(), schema_to_map(task))
+        end)
+      rescue
+        _ ->
+          Logger.warning(
+            "Could not load tasks from database (database unavailable). Starting with empty state."
+          )
+
+          %{}
+      end
+
     {:ok, state}
   end
 
@@ -165,31 +172,37 @@ defmodule BotArmyChore.TaskStore do
     task_id = Ecto.UUID.generate()
 
     # Parse due_date if present
-    due_date = case Map.get(payload, "due_date") do
-      nil -> nil
-      date_str when is_binary(date_str) ->
-        case Date.from_iso8601(date_str) do
-          {:ok, date} -> date
-          {:error, _} -> nil
-        end
-      _ -> nil
-    end
+    due_date =
+      case Map.get(payload, "due_date") do
+        nil ->
+          nil
 
-    changeset = BotArmyChore.Schemas.Task.changeset(
-      %BotArmyChore.Schemas.Task{id: task_id},
-      %{
-        "tenant_id" => payload["tenant_id"],
-        "user_id" => Map.get(payload, "user_id"),
-        "title" => payload["title"],
-        "category" => payload["category"],
-        "frequency" => Map.get(payload, "frequency", "once"),
-        "assigned_to" => Map.get(payload, "assigned_to"),
-        "priority" => Map.get(payload, "priority", "normal"),
-        "due_date" => due_date,
-        "location" => Map.get(payload, "location"),
-        "status" => "pending"
-      }
-    )
+        date_str when is_binary(date_str) ->
+          case Date.from_iso8601(date_str) do
+            {:ok, date} -> date
+            {:error, _} -> nil
+          end
+
+        _ ->
+          nil
+      end
+
+    changeset =
+      BotArmyChore.Schemas.Task.changeset(
+        %BotArmyChore.Schemas.Task{id: task_id},
+        %{
+          "tenant_id" => payload["tenant_id"],
+          "user_id" => Map.get(payload, "user_id"),
+          "title" => payload["title"],
+          "category" => payload["category"],
+          "frequency" => Map.get(payload, "frequency", "once"),
+          "assigned_to" => Map.get(payload, "assigned_to"),
+          "priority" => Map.get(payload, "priority", "normal"),
+          "due_date" => due_date,
+          "location" => Map.get(payload, "location"),
+          "status" => "pending"
+        }
+      )
 
     case BotArmyChore.Repo.insert(changeset) do
       {:ok, db_task} ->
@@ -212,46 +225,61 @@ defmodule BotArmyChore.TaskStore do
 
       _task ->
         task_uuid = Ecto.UUID.cast!(task_id)
-        db_task = BotArmyChore.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
 
-        if db_task do
-          # Parse due_date if present
-          due_date = case Map.get(payload, "due_date") do
-            nil -> nil
-            date_str when is_binary(date_str) ->
-              case Date.from_iso8601(date_str) do
-                {:ok, date} -> date
-                {:error, _} -> nil
-              end
-            _ -> nil
-          end
+        case BotArmyChore.Repo.transaction(fn ->
+               db_task = BotArmyChore.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
 
-          changeset = BotArmyChore.Schemas.Task.changeset(
-            db_task,
-            %{
-              "title" => Map.get(payload, "title", db_task.title),
-              "category" => Map.get(payload, "category", db_task.category),
-              "frequency" => Map.get(payload, "frequency", db_task.frequency),
-              "assigned_to" => Map.get(payload, "assigned_to", db_task.assigned_to),
-              "priority" => Map.get(payload, "priority", db_task.priority),
-              "due_date" => due_date || db_task.due_date,
-              "location" => Map.get(payload, "location", db_task.location)
-            }
-          )
+               if db_task do
+                 # Parse due_date if present
+                 due_date =
+                   case Map.get(payload, "due_date") do
+                     nil ->
+                       nil
 
-          case BotArmyChore.Repo.update(changeset) do
-            {:ok, updated_db_task} ->
-              updated_task = schema_to_map(updated_db_task)
-              new_state = Map.put(state, task_id, updated_task)
-              Logger.info("Updated chore task in database: #{task_id}")
-              {:reply, {:ok, updated_task}, new_state}
+                     date_str when is_binary(date_str) ->
+                       case Date.from_iso8601(date_str) do
+                         {:ok, date} -> date
+                         {:error, _} -> nil
+                       end
 
-            {:error, changeset} ->
-              Logger.error("Failed to update task: #{inspect(changeset.errors)}")
-              {:reply, {:error, :database_error}, state}
-          end
-        else
-          {:reply, {:error, :not_found}, state}
+                     _ ->
+                       nil
+                   end
+
+                 changeset =
+                   BotArmyChore.Schemas.Task.changeset(
+                     db_task,
+                     %{
+                       "title" => Map.get(payload, "title", db_task.title),
+                       "category" => Map.get(payload, "category", db_task.category),
+                       "frequency" => Map.get(payload, "frequency", db_task.frequency),
+                       "assigned_to" => Map.get(payload, "assigned_to", db_task.assigned_to),
+                       "priority" => Map.get(payload, "priority", db_task.priority),
+                       "due_date" => due_date || db_task.due_date,
+                       "location" => Map.get(payload, "location", db_task.location)
+                     }
+                   )
+
+                 case BotArmyChore.Repo.update(changeset) do
+                   {:ok, updated} -> updated
+                   {:error, changeset} -> BotArmyChore.Repo.rollback(changeset)
+                 end
+               else
+                 BotArmyChore.Repo.rollback(:not_found)
+               end
+             end) do
+          {:ok, updated_db_task} ->
+            updated_task = schema_to_map(updated_db_task)
+            new_state = Map.put(state, task_id, updated_task)
+            Logger.info("Updated chore task in database: #{task_id}")
+            {:reply, {:ok, updated_task}, new_state}
+
+          {:error, :not_found} ->
+            {:reply, {:error, :not_found}, state}
+
+          {:error, changeset} ->
+            Logger.error("Failed to update task: #{inspect(changeset.errors)}")
+            {:reply, {:error, :database_error}, state}
         end
     end
   end
@@ -264,27 +292,37 @@ defmodule BotArmyChore.TaskStore do
 
       _task ->
         task_uuid = Ecto.UUID.cast!(task_id)
-        db_task = BotArmyChore.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
 
-        if db_task do
-          changeset = BotArmyChore.Schemas.Task.changeset(
-            db_task,
-            %{"status" => "in_progress"}
-          )
+        case BotArmyChore.Repo.transaction(fn ->
+               db_task = BotArmyChore.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
 
-          case BotArmyChore.Repo.update(changeset) do
-            {:ok, started_db_task} ->
-              started_task = schema_to_map(started_db_task)
-              new_state = Map.put(state, task_id, started_task)
-              Logger.info("Started chore task in database: #{task_id}")
-              {:reply, {:ok, started_task}, new_state}
+               if db_task do
+                 changeset =
+                   BotArmyChore.Schemas.Task.changeset(
+                     db_task,
+                     %{"status" => "in_progress"}
+                   )
 
-            {:error, changeset} ->
-              Logger.error("Failed to start task: #{inspect(changeset.errors)}")
-              {:reply, {:error, :database_error}, state}
-          end
-        else
-          {:reply, {:error, :not_found}, state}
+                 case BotArmyChore.Repo.update(changeset) do
+                   {:ok, updated} -> updated
+                   {:error, changeset} -> BotArmyChore.Repo.rollback(changeset)
+                 end
+               else
+                 BotArmyChore.Repo.rollback(:not_found)
+               end
+             end) do
+          {:ok, started_db_task} ->
+            started_task = schema_to_map(started_db_task)
+            new_state = Map.put(state, task_id, started_task)
+            Logger.info("Started chore task in database: #{task_id}")
+            {:reply, {:ok, started_task}, new_state}
+
+          {:error, :not_found} ->
+            {:reply, {:error, :not_found}, state}
+
+          {:error, changeset} ->
+            Logger.error("Failed to start task: #{inspect(changeset.errors)}")
+            {:reply, {:error, :database_error}, state}
         end
     end
   end
@@ -297,30 +335,41 @@ defmodule BotArmyChore.TaskStore do
 
       _task ->
         task_uuid = Ecto.UUID.cast!(task_id)
-        db_task = BotArmyChore.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
 
-        if db_task do
-          changeset = BotArmyChore.Schemas.Task.changeset(
-            db_task,
-            %{
-              "status" => "completed",
-              "completed_at" => NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
-            }
-          )
+        case BotArmyChore.Repo.transaction(fn ->
+               db_task = BotArmyChore.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
 
-          case BotArmyChore.Repo.update(changeset) do
-            {:ok, completed_db_task} ->
-              completed_task = schema_to_map(completed_db_task)
-              new_state = Map.put(state, task_id, completed_task)
-              Logger.info("Completed chore task in database: #{task_id}")
-              {:reply, {:ok, completed_task}, new_state}
+               if db_task do
+                 changeset =
+                   BotArmyChore.Schemas.Task.changeset(
+                     db_task,
+                     %{
+                       "status" => "completed",
+                       "completed_at" =>
+                         NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
+                     }
+                   )
 
-            {:error, changeset} ->
-              Logger.error("Failed to complete task: #{inspect(changeset.errors)}")
-              {:reply, {:error, :database_error}, state}
-          end
-        else
-          {:reply, {:error, :not_found}, state}
+                 case BotArmyChore.Repo.update(changeset) do
+                   {:ok, updated} -> updated
+                   {:error, changeset} -> BotArmyChore.Repo.rollback(changeset)
+                 end
+               else
+                 BotArmyChore.Repo.rollback(:not_found)
+               end
+             end) do
+          {:ok, completed_db_task} ->
+            completed_task = schema_to_map(completed_db_task)
+            new_state = Map.put(state, task_id, completed_task)
+            Logger.info("Completed chore task in database: #{task_id}")
+            {:reply, {:ok, completed_task}, new_state}
+
+          {:error, :not_found} ->
+            {:reply, {:error, :not_found}, state}
+
+          {:error, changeset} ->
+            Logger.error("Failed to complete task: #{inspect(changeset.errors)}")
+            {:reply, {:error, :database_error}, state}
         end
     end
   end
@@ -342,17 +391,23 @@ defmodule BotArmyChore.TaskStore do
 
   @impl true
   def handle_call({:list, tenant_id}, _from, state) do
-    tasks = state
+    tasks =
+      state
       |> Map.values()
-      |> Enum.filter(fn t -> t["tenant_id"] == tenant_id && t["status"] in ["pending", "in_progress"] end)
+      |> Enum.filter(fn t ->
+        t["tenant_id"] == tenant_id && t["status"] in ["pending", "in_progress"]
+      end)
+
     {:reply, {:ok, tasks}, state}
   end
 
   @impl true
   def handle_call({:list_all, tenant_id}, _from, state) do
-    tasks = state
+    tasks =
+      state
       |> Map.values()
       |> Enum.filter(fn t -> t["tenant_id"] == tenant_id end)
+
     {:reply, {:ok, tasks}, state}
   end
 
@@ -365,17 +420,20 @@ defmodule BotArmyChore.TaskStore do
   @impl true
   def handle_call({:list_overdue_recurring, tenant_id}, _from, state) do
     now = DateTime.utc_now()
-    tasks = state
+
+    tasks =
+      state
       |> Map.values()
       |> Enum.filter(fn t ->
         t["tenant_id"] == tenant_id &&
-        t["frequency"] != "once" &&
-        t["next_due_at"] != nil &&
-        case DateTime.from_iso8601(t["next_due_at"]) do
-          {:ok, due_dt, _} -> DateTime.compare(due_dt, now) != :gt
-          _ -> false
-        end
+          t["frequency"] != "once" &&
+          t["next_due_at"] != nil &&
+          case DateTime.from_iso8601(t["next_due_at"]) do
+            {:ok, due_dt, _} -> DateTime.compare(due_dt, now) != :gt
+            _ -> false
+          end
       end)
+
     {:reply, tasks, state}
   end
 
@@ -387,27 +445,37 @@ defmodule BotArmyChore.TaskStore do
 
       _task ->
         task_uuid = Ecto.UUID.cast!(task_id)
-        db_task = BotArmyChore.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
 
-        if db_task do
-          changeset = BotArmyChore.Schemas.Task.changeset(
-            db_task,
-            %{"next_due_at" => next_due_at}
-          )
+        case BotArmyChore.Repo.transaction(fn ->
+               db_task = BotArmyChore.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
 
-          case BotArmyChore.Repo.update(changeset) do
-            {:ok, updated_db_task} ->
-              updated_task = schema_to_map(updated_db_task)
-              new_state = Map.put(state, task_id, updated_task)
-              Logger.info("Updated next_due_at for task: #{task_id}")
-              {:reply, {:ok, updated_task}, new_state}
+               if db_task do
+                 changeset =
+                   BotArmyChore.Schemas.Task.changeset(
+                     db_task,
+                     %{"next_due_at" => next_due_at}
+                   )
 
-            {:error, changeset} ->
-              Logger.error("Failed to set next_due_at: #{inspect(changeset.errors)}")
-              {:reply, {:error, :database_error}, state}
-          end
-        else
-          {:reply, {:error, :not_found}, state}
+                 case BotArmyChore.Repo.update(changeset) do
+                   {:ok, updated} -> updated
+                   {:error, changeset} -> BotArmyChore.Repo.rollback(changeset)
+                 end
+               else
+                 BotArmyChore.Repo.rollback(:not_found)
+               end
+             end) do
+          {:ok, updated_db_task} ->
+            updated_task = schema_to_map(updated_db_task)
+            new_state = Map.put(state, task_id, updated_task)
+            Logger.info("Updated next_due_at for task: #{task_id}")
+            {:reply, {:ok, updated_task}, new_state}
+
+          {:error, :not_found} ->
+            {:reply, {:error, :not_found}, state}
+
+          {:error, changeset} ->
+            Logger.error("Failed to set next_due_at: #{inspect(changeset.errors)}")
+            {:reply, {:error, :database_error}, state}
         end
     end
   end
@@ -420,27 +488,37 @@ defmodule BotArmyChore.TaskStore do
 
       _task ->
         task_uuid = Ecto.UUID.cast!(task_id)
-        db_task = BotArmyChore.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
 
-        if db_task do
-          changeset = BotArmyChore.Schemas.Task.changeset(
-            db_task,
-            %{"notification_level" => level, "last_notified_at" => notified_at}
-          )
+        case BotArmyChore.Repo.transaction(fn ->
+               db_task = BotArmyChore.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
 
-          case BotArmyChore.Repo.update(changeset) do
-            {:ok, updated_db_task} ->
-              updated_task = schema_to_map(updated_db_task)
-              new_state = Map.put(state, task_id, updated_task)
-              Logger.info("Updated notification_level for task: #{task_id}")
-              {:reply, {:ok, updated_task}, new_state}
+               if db_task do
+                 changeset =
+                   BotArmyChore.Schemas.Task.changeset(
+                     db_task,
+                     %{"notification_level" => level, "last_notified_at" => notified_at}
+                   )
 
-            {:error, changeset} ->
-              Logger.error("Failed to set notification_level: #{inspect(changeset.errors)}")
-              {:reply, {:error, :database_error}, state}
-          end
-        else
-          {:reply, {:error, :not_found}, state}
+                 case BotArmyChore.Repo.update(changeset) do
+                   {:ok, updated} -> updated
+                   {:error, changeset} -> BotArmyChore.Repo.rollback(changeset)
+                 end
+               else
+                 BotArmyChore.Repo.rollback(:not_found)
+               end
+             end) do
+          {:ok, updated_db_task} ->
+            updated_task = schema_to_map(updated_db_task)
+            new_state = Map.put(state, task_id, updated_task)
+            Logger.info("Updated notification_level for task: #{task_id}")
+            {:reply, {:ok, updated_task}, new_state}
+
+          {:error, :not_found} ->
+            {:reply, {:error, :not_found}, state}
+
+          {:error, changeset} ->
+            Logger.error("Failed to set notification_level: #{inspect(changeset.errors)}")
+            {:reply, {:error, :database_error}, state}
         end
     end
   end
@@ -459,11 +537,15 @@ defmodule BotArmyChore.TaskStore do
       "due_date" => if(task.due_date, do: task.due_date |> to_string(), else: nil),
       "location" => task.location,
       "status" => task.status,
-      "completed_at" => if(task.completed_at, do: task.completed_at |> NaiveDateTime.to_iso8601(), else: nil),
-      "next_due_at" => if(task.next_due_at, do: task.next_due_at |> DateTime.to_iso8601(), else: nil),
-      "last_completed_at" => if(task.last_completed_at, do: task.last_completed_at |> DateTime.to_iso8601(), else: nil),
+      "completed_at" =>
+        if(task.completed_at, do: task.completed_at |> NaiveDateTime.to_iso8601(), else: nil),
+      "next_due_at" =>
+        if(task.next_due_at, do: task.next_due_at |> DateTime.to_iso8601(), else: nil),
+      "last_completed_at" =>
+        if(task.last_completed_at, do: task.last_completed_at |> DateTime.to_iso8601(), else: nil),
       "notification_level" => task.notification_level || 0,
-      "last_notified_at" => if(task.last_notified_at, do: task.last_notified_at |> DateTime.to_iso8601(), else: nil),
+      "last_notified_at" =>
+        if(task.last_notified_at, do: task.last_notified_at |> DateTime.to_iso8601(), else: nil),
       "created_at" => task.inserted_at |> NaiveDateTime.to_iso8601(),
       "updated_at" => task.updated_at |> NaiveDateTime.to_iso8601()
     }

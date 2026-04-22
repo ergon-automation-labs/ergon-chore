@@ -1,5 +1,6 @@
 defmodule BotArmyChoreTest do
   use ExUnit.Case
+  @moduletag :core
   doctest BotArmyChore
 
   test "version" do

@@ -1,5 +1,6 @@
 defmodule BotArmyChore.Handlers.TaskHandlerTest do
   use ExUnit.Case
+  @moduletag :handlers
   import Mox
 
   setup :set_mox_global
@@ -8,15 +9,19 @@ defmodule BotArmyChore.Handlers.TaskHandlerTest do
     stub(BotArmyChore.TaskStoreMock, :create, fn _payload ->
       {:ok, %{"id" => UUID.uuid4(), "title" => "test task"}}
     end)
+
     stub(BotArmyChore.TaskStoreMock, :update, fn _task_id, _payload ->
       {:ok, %{"id" => UUID.uuid4(), "title" => "test task"}}
     end)
+
     stub(BotArmyChore.TaskStoreMock, :complete, fn _task_id ->
       {:ok, %{"id" => UUID.uuid4(), "title" => "test task", "frequency" => "once"}}
     end)
+
     stub(BotArmyChore.TaskStoreMock, :set_next_due, fn _task_id, _next_due ->
       {:ok, %{"id" => UUID.uuid4(), "title" => "test task"}}
     end)
+
     :ok
   end
 

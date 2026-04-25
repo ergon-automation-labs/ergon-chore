@@ -14,11 +14,13 @@ defmodule BotArmyChore.Application do
 
   @impl true
   def start(_type, _args) do
-    children = []
-    |> maybe_add_repo()
-    |> maybe_add_task_store()
-    |> maybe_add_scheduler()
-    |> maybe_add_consumer()
+    children =
+      []
+      |> maybe_add_repo()
+      |> maybe_add_task_store()
+      |> maybe_add_scheduler()
+      |> maybe_add_pulse_publisher()
+      |> maybe_add_consumer()
 
     opts = [strategy: :one_for_one, name: BotArmyChore.Supervisor]
     Supervisor.start_link(children, opts)
@@ -34,6 +36,10 @@ defmodule BotArmyChore.Application do
 
   defp maybe_add_scheduler(children) do
     if @env == :test, do: children, else: [{BotArmyChore.Scheduler, []} | children]
+  end
+
+  defp maybe_add_pulse_publisher(children) do
+    if @env == :test, do: children, else: [{BotArmyChore.PulsePublisher, []} | children]
   end
 
   defp maybe_add_consumer(children) do

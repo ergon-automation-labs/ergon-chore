@@ -1,0 +1,89 @@
+defmodule BotArmyChore.PulsePublisher do
+  @moduledoc """
+  Publishes health pulses for the Chore bot.
+
+  Tracks chore system metrics:
+  - Active chores and assignments
+  - Completion rate
+  - Overdue items
+  """
+
+  use GenServer
+  require Logger
+
+  def start_link(opts) do
+    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  end
+
+  @impl true
+  def init(_opts) do
+    schedule_publish()
+    {:ok, %{active_chores: 0, completed: 0, overdue: 0}}
+  end
+
+  def record_chore_active do
+    GenServer.cast(__MODULE__, :active)
+  end
+
+  def record_chore_completed do
+    GenServer.cast(__MODULE__, :completed)
+  end
+
+  def record_chore_overdue do
+    GenServer.cast(__MODULE__, :overdue)
+  end
+
+  @impl true
+  def handle_cast(:active, state) do
+    {:noreply, Map.update(state, :active_chores, 1, &(&1 + 1))}
+  end
+
+  @impl true
+  def handle_cast(:completed, state) do
+    {:noreply, Map.update(state, :completed, 1, &(&1 + 1))}
+  end
+
+  @impl true
+  def handle_cast(:overdue, state) do
+    {:noreply, Map.update(state, :overdue, 1, &(&1 + 1))}
+  end
+
+  @impl true
+  def handle_info(:publish, state) do
+    publish_pulse(state)
+    schedule_publish()
+    {:noreply, %{active_chores: 0, completed: 0, overdue: 0}}
+  end
+
+  defp schedule_publish do
+    Process.send_after(self(), :publish, 5 * 60 * 1000)
+  end
+
+  defp publish_pulse(metrics) do
+    try do
+      health_signal =
+        if metrics.overdue > 0, do: "degraded", else: "nominal"
+
+      payload = %{
+        "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601(),
+        "service" => "chore",
+        "health_signal" => health_signal,
+        "metrics" => %{
+          "active_chores" => metrics.active_chores,
+          "completed" => metrics.completed,
+          "overdue" => metrics.overdue
+        }
+      }
+
+      subject = "bot.chore.pulse"
+      message = Jason.encode!(payload)
+
+      case BotArmyRuntime.NATS.Connection.publish(subject, message) do
+        :ok -> Logger.info("[PulsePublisher] Published chore pulse")
+        {:error, reason} -> Logger.warning("[PulsePublisher] Publish failed: #{inspect(reason)}")
+      end
+    rescue
+      e -> Logger.error("[PulsePublisher] Error: #{inspect(e)}")
+    end
+  end
+end

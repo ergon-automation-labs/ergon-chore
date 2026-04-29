@@ -27,14 +27,16 @@ defmodule BotArmyChore.NATS.Consumer do
   require Logger
 
   @reconnect_delay_ms 5000
+  @version Mix.Project.config()[:version]
+  @registry_heartbeat_ms 20_000
 
   @subjects [
-    "chore.task.create",
-    "chore.task.assign",
-    "chore.task.complete",
-    "chore.schedule.list",
-    "chore.assignment.rotate",
-    "chore.assignment.list"
+    %{subject: "chore.task.create", type: :subscribe, description: "Create chore task"},
+    %{subject: "chore.task.assign", type: :subscribe, description: "Assign chore"},
+    %{subject: "chore.task.complete", type: :subscribe, description: "Complete chore"},
+    %{subject: "chore.schedule.list", type: :request_reply, description: "List chore schedule"},
+    %{subject: "chore.assignment.rotate", type: :subscribe, description: "Rotate assignments"},
+    %{subject: "chore.assignment.list", type: :request_reply, description: "List assignments"}
   ]
 
   # API
@@ -65,11 +67,13 @@ defmodule BotArmyChore.NATS.Consumer do
         BotArmyRuntime.NATS.Connection.subscribe_to_status()
         Logger.info("Connected to NATS, subscribing to chore topics")
 
-        Enum.each(@subjects, fn subject ->
+        Enum.each(@subjects, fn %{subject: subject} ->
           Gnat.sub(conn, self(), subject)
           Logger.info("Chore consumer subscribed to #{subject}")
         end)
 
+        BotArmyRuntime.Registry.register("chore", @subjects, @version)
+        Process.send_after(self(), :registry_heartbeat, @registry_heartbeat_ms)
         {:noreply, %{state | conn: conn}}
 
       {:error, reason} ->
@@ -121,6 +125,16 @@ defmodule BotArmyChore.NATS.Consumer do
   def handle_info({:nats, :connected}, state) do
     Logger.info("Reconnected to NATS, re-subscribing")
     {:noreply, state, {:continue, :subscribe}}
+  end
+
+  @impl true
+  def handle_info(:registry_heartbeat, state) do
+    if length(state.subscriptions) > 0 do
+      BotArmyRuntime.Registry.register("chore", @subjects, @version)
+      Process.send_after(self(), :registry_heartbeat, @registry_heartbeat_ms)
+    end
+
+    {:noreply, state}
   end
 
   # Private functions

@@ -11,6 +11,8 @@ defmodule BotArmyChore.PulsePublisher do
   use GenServer
   require Logger
 
+  @health_interval_ms 30 * 1000
+
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -18,6 +20,7 @@ defmodule BotArmyChore.PulsePublisher do
   @impl true
   def init(_opts) do
     schedule_publish()
+    Process.send_after(self(), :publish_health, 2_000)
     {:ok, %{active_chores: 0, completed: 0, overdue: 0}}
   end
 
@@ -55,8 +58,25 @@ defmodule BotArmyChore.PulsePublisher do
     {:noreply, %{active_chores: 0, completed: 0, overdue: 0}}
   end
 
+  @impl true
+  def handle_info(:publish_health, state) do
+    publish_system_health(state)
+    Process.send_after(self(), :publish_health, @health_interval_ms)
+    {:noreply, state}
+  end
+
   defp schedule_publish do
     Process.send_after(self(), :publish, 5 * 60 * 1000)
+  end
+
+  defp publish_system_health(metrics) do
+    health_signal = if metrics.overdue > 0, do: "degraded", else: "nominal"
+
+    BotArmyRuntime.SynapseHealth.publish(
+      source: "bot_army_chore",
+      service: "chore",
+      health_signal: health_signal
+    )
   end
 
   defp publish_pulse(metrics) do

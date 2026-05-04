@@ -15,4 +15,16 @@ defmodule BotArmyChore.VetoRules do
       entry -> entry.value > 0
     end
   end
+
+  @doc """
+  Veto fitness suggest_workout when there are overdue chores.
+  Don't suggest a workout when chores are piling up — focus first.
+  """
+  @spec veto_fitness_when_overdue(map()) :: boolean()
+  def veto_fitness_when_overdue(_envelope) do
+    case AccumulatedContext.latest("chore", :overdue_count) do
+      nil -> false
+      entry -> entry.value > 0
+    end
+  end
 end

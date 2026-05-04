@@ -61,6 +61,11 @@ defmodule BotArmyChore.Application do
           bot: "gtd",
           action: "nudge",
           custom: &BotArmyChore.VetoRules.veto_nudge_when_overdue_chores/1
+        ],
+        [
+          bot: "fitness",
+          action: "suggest_workout",
+          custom: &BotArmyChore.VetoRules.veto_fitness_when_overdue/1
         ]
       ]
 

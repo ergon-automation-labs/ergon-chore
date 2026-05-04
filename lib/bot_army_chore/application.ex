@@ -20,6 +20,7 @@ defmodule BotArmyChore.Application do
       |> maybe_add_task_store()
       |> maybe_add_scheduler()
       |> maybe_add_pulse_publisher()
+      |> maybe_add_veto_listener()
       |> maybe_add_consumer()
 
     opts = [strategy: :one_for_one, name: BotArmyChore.Supervisor]
@@ -44,5 +45,22 @@ defmodule BotArmyChore.Application do
 
   defp maybe_add_consumer(children) do
     if @env == :test, do: children, else: [{BotArmyChore.NATS.Consumer, []} | children]
+  end
+
+  defp maybe_add_veto_listener(children) do
+    if @env == :test do
+      children
+    else
+      veto_rules = [
+        [
+          bot: "gtd",
+          action: "nudge",
+          custom: &BotArmyChore.VetoRules.veto_nudge_when_overdue_chores/1
+        ]
+      ]
+
+      child = {BotArmyRuntime.Intent.VetoListener, rules: veto_rules, bot_name: "chore"}
+      [child | children]
+    end
   end
 end

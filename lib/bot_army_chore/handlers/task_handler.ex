@@ -23,17 +23,25 @@ defmodule BotArmyChore.Handlers.TaskHandler do
     %{tenant_id: tenant_id, user_id: user_id} = BotArmyCore.Tenant.extract_context(message)
 
     # Stamp context into payload
-    stamped_payload = Map.merge(payload, %{
-      "tenant_id" => tenant_id,
-      "user_id" => user_id
-    })
+    stamped_payload =
+      Map.merge(payload, %{
+        "tenant_id" => tenant_id,
+        "user_id" => user_id
+      })
 
     case validate_create_payload(stamped_payload) do
       :ok ->
         case task_store().create(stamped_payload) do
           {:ok, task} ->
             Logger.info("Chore task created: event_id=#{event_id}, task_id=#{task["id"]}")
-            publish_event("chore.task.created", Map.put(stamped_payload, "task_id", task["id"]), event_id, tenant_id, user_id)
+
+            publish_event(
+              "chore.task.created",
+              Map.put(stamped_payload, "task_id", task["id"]),
+              event_id,
+              tenant_id,
+              user_id
+            )
 
           {:error, reason} ->
             Logger.warning("Failed to persist chore task: #{inspect(reason)}")
@@ -60,7 +68,10 @@ defmodule BotArmyChore.Handlers.TaskHandler do
       :ok ->
         case task_store().update(payload["task_id"], %{"assigned_to" => payload["assigned_to"]}) do
           {:ok, _task} ->
-            Logger.info("Chore task assigned: event_id=#{event_id}, task_id=#{payload["task_id"]}")
+            Logger.info(
+              "Chore task assigned: event_id=#{event_id}, task_id=#{payload["task_id"]}"
+            )
+
             publish_event("chore.task.assigned", payload, event_id, tenant_id, user_id)
 
           {:error, :not_found} ->
@@ -94,8 +105,17 @@ defmodule BotArmyChore.Handlers.TaskHandler do
 
         case rotate_assignment(tenant_id, task_id) do
           {:ok, next_person} ->
-            Logger.info("Chore rotated: event_id=#{event_id}, task_id=#{task_id}, assigned_to=#{next_person}")
-            publish_event("chore.task.assigned", %{"task_id" => task_id, "assigned_to" => next_person}, event_id, tenant_id, user_id)
+            Logger.info(
+              "Chore rotated: event_id=#{event_id}, task_id=#{task_id}, assigned_to=#{next_person}"
+            )
+
+            publish_event(
+              "chore.task.assigned",
+              %{"task_id" => task_id, "assigned_to" => next_person},
+              event_id,
+              tenant_id,
+              user_id
+            )
 
           {:error, reason} ->
             Logger.warning("Failed to rotate assignment: #{inspect(reason)}")
@@ -122,7 +142,10 @@ defmodule BotArmyChore.Handlers.TaskHandler do
       :ok ->
         case task_store().complete(payload["task_id"]) do
           {:ok, task} ->
-            Logger.info("Chore task completed: event_id=#{event_id}, task_id=#{payload["task_id"]}")
+            Logger.info(
+              "Chore task completed: event_id=#{event_id}, task_id=#{payload["task_id"]}"
+            )
+
             advance_recurring_task(tenant_id, task)
             publish_event("chore.task.completed", payload, event_id, tenant_id, user_id)
 
@@ -186,7 +209,7 @@ defmodule BotArmyChore.Handlers.TaskHandler do
     end
   end
 
-  defp get_next_member(current, members) when is_list(members) and length(members) > 0 do
+  defp get_next_member(current, members) when is_list(members) and members != [] do
     case Enum.find_index(members, &(&1 == current)) do
       nil -> List.first(members)
       idx -> Enum.at(members, rem(idx + 1, length(members)))
@@ -262,17 +285,18 @@ defmodule BotArmyChore.Handlers.TaskHandler do
     node() |> Atom.to_string()
   end
 
-  defp advance_recurring_task(_tenant_id, %{"frequency" => freq, "id" => id}) when freq not in [nil, "once"] do
+  defp advance_recurring_task(_tenant_id, %{"frequency" => freq, "id" => id})
+       when freq not in [nil, "once"] do
     task_store().set_next_due(id, compute_next_due(freq))
   end
 
   defp advance_recurring_task(_tenant_id, _), do: :ok
 
-  defp compute_next_due("daily"),   do: DateTime.add(DateTime.utc_now(), 1, :day)
-  defp compute_next_due("weekly"),  do: DateTime.add(DateTime.utc_now(), 7, :day)
+  defp compute_next_due("daily"), do: DateTime.add(DateTime.utc_now(), 1, :day)
+  defp compute_next_due("weekly"), do: DateTime.add(DateTime.utc_now(), 7, :day)
   defp compute_next_due("monthly"), do: DateTime.add(DateTime.utc_now(), 30, :day)
-  defp compute_next_due("yearly"),  do: DateTime.add(DateTime.utc_now(), 365, :day)
-  defp compute_next_due(_),         do: DateTime.add(DateTime.utc_now(), 7, :day)
+  defp compute_next_due("yearly"), do: DateTime.add(DateTime.utc_now(), 365, :day)
+  defp compute_next_due(_), do: DateTime.add(DateTime.utc_now(), 7, :day)
 
   defp task_store, do: Application.get_env(:bot_army_chore, :task_store, BotArmyChore.TaskStore)
 end

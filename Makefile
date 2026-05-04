@@ -119,8 +119,9 @@ publish-release: release
 	@echo "==============================================="
 	@echo ""
 
-	# Get version from release metadata
-	VERSION=$$(cat _build/prod/rel/chore_bot/releases/RELEASES | tail -1 | cut -d' ' -f2); \
+	# Get version from mix.exs
+	VERSION=$$(sed -n 's/^[[:space:]]*version:[[:space:]]*"\([^"]*\)".*/\1/p' mix.exs | head -n 1); \
+	if [ -z "$$VERSION" ]; then echo "Failed to resolve version from mix.exs"; exit 1; fi; \
 	echo "Version: $$VERSION"; \
 	\
 	# Create tarball

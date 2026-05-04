@@ -20,14 +20,28 @@ config :bot_army_chore, :household_members, ["Alice", "Bob", "Charlie"]
 # Ecto repositories for migrations
 config :bot_army_chore, ecto_repos: [BotArmyChore.Repo]
 
+# Intent thresholds for chore heartbeat decisions
+config :bot_army_chore, :intent_thresholds, %{
+  overdue_count: %{min: 1, weight: 0.8},
+  random_threshold: 0.3
+}
+
 # Database configuration
 # Priority: BOT_ARMY_CHORE_DB_* (set by Salt/Jenkins) > DATABASE_* (from .env for local dev) > defaults
 config :bot_army_chore, BotArmyChore.Repo,
-  database: System.get_env("BOT_ARMY_CHORE_DB_NAME") || System.get_env("DATABASE_NAME", "ergon_chore_dev"),
-  hostname: System.get_env("BOT_ARMY_CHORE_DB_HOST") || System.get_env("DATABASE_HOST", "localhost"),
-  port: String.to_integer(System.get_env("BOT_ARMY_CHORE_DB_PORT") || System.get_env("DATABASE_PORT", "30003")),
-  username: System.get_env("BOT_ARMY_CHORE_DB_USER") || System.get_env("DATABASE_USER", "postgres"),
-  password: System.get_env("BOT_ARMY_CHORE_DB_PASSWORD") || System.get_env("DATABASE_PASSWORD", "postgres"),
+  database:
+    System.get_env("BOT_ARMY_CHORE_DB_NAME") || System.get_env("DATABASE_NAME", "ergon_chore_dev"),
+  hostname:
+    System.get_env("BOT_ARMY_CHORE_DB_HOST") || System.get_env("DATABASE_HOST", "localhost"),
+  port:
+    String.to_integer(
+      System.get_env("BOT_ARMY_CHORE_DB_PORT") || System.get_env("DATABASE_PORT", "30003")
+    ),
+  username:
+    System.get_env("BOT_ARMY_CHORE_DB_USER") || System.get_env("DATABASE_USER", "postgres"),
+  password:
+    System.get_env("BOT_ARMY_CHORE_DB_PASSWORD") ||
+      System.get_env("DATABASE_PASSWORD", "postgres"),
   pool_size: 10
 
 # Import environment-specific config

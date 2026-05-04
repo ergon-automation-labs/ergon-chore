@@ -36,7 +36,12 @@ defmodule BotArmyChore.NATS.Consumer do
     %{subject: "chore.task.complete", type: :subscribe, description: "Complete chore"},
     %{subject: "chore.schedule.list", type: :request_reply, description: "List chore schedule"},
     %{subject: "chore.assignment.rotate", type: :subscribe, description: "Rotate assignments"},
-    %{subject: "chore.assignment.list", type: :request_reply, description: "List assignments"}
+    %{subject: "chore.assignment.list", type: :request_reply, description: "List assignments"},
+    %{
+      subject: "bot_army.chore.intent.remind_overdue",
+      type: :subscribe,
+      description: "Intent: remind about overdue chores"
+    }
   ]
 
   # API

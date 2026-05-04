@@ -53,7 +53,8 @@ defmodule BotArmyChore.PulsePublisher do
 
   @impl true
   def handle_info(:publish, state) do
-    publish_pulse(state)
+    pulse = publish_pulse(state)
+    BotArmyChore.IntentEvaluator.record_observations(pulse)
     schedule_publish()
     {:noreply, %{active_chores: 0, completed: 0, overdue: 0}}
   end
@@ -92,6 +93,9 @@ defmodule BotArmyChore.PulsePublisher do
           "active_chores" => metrics.active_chores,
           "completed" => metrics.completed,
           "overdue" => metrics.overdue
+        },
+        "observations" => %{
+          "overdue_count" => metrics.overdue
         }
       }
 
@@ -101,8 +105,12 @@ defmodule BotArmyChore.PulsePublisher do
         {:ok, _} -> Logger.info("[PulsePublisher] Published chore pulse")
         {:error, reason} -> Logger.warning("[PulsePublisher] Publish failed: #{inspect(reason)}")
       end
+
+      payload
     rescue
-      e -> Logger.error("[PulsePublisher] Error: #{inspect(e)}")
+      e ->
+        Logger.error("[PulsePublisher] Error: #{inspect(e)}")
+        %{}
     end
   end
 end

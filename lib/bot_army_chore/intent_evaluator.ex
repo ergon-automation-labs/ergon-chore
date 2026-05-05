@@ -6,6 +6,7 @@ defmodule BotArmyChore.IntentEvaluator do
   require Logger
 
   alias BotArmyRuntime.Intent.AccumulatedContext
+  alias BotArmyRuntime.Intent.ActionHandler
   alias BotArmyRuntime.Intent.DeferHandler
   alias BotArmyRuntime.Intent.Publisher
   alias BotArmyRuntime.Intent.ThresholdModel
@@ -55,6 +56,7 @@ defmodule BotArmyChore.IntentEvaluator do
   def handle_info(:evaluate, state) do
     results = do_evaluate()
     new_pending = process_defer_results(results, state.pending_defers)
+    process_act_results(results)
     Process.send_after(self(), :evaluate, @evaluate_interval_ms)
     {:noreply, %{state | last_evaluation: DateTime.utc_now(), pending_defers: new_pending}}
   end
@@ -148,6 +150,56 @@ defmodule BotArmyChore.IntentEvaluator do
       _result, acc ->
         acc
     end)
+  end
+
+  defp process_act_results(results) do
+    Enum.each(results, fn
+      {:acted, action, intent_id, details, endorsements} ->
+        config = act_config(action)
+
+        ActionHandler.execute_action(
+          @bot_name,
+          action,
+          intent_id,
+          details,
+          endorsements,
+          config
+        )
+
+      _result ->
+        :ok
+    end)
+  end
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Act Configuration
+  # ───────────────────────────────────────────────────────────────────────────
+
+  defp act_config("remind_overdue") do
+    [
+      handler_fn: &__MODULE__.handle_remind_overdue_action/5
+    ]
+  end
+
+  defp act_config(_), do: nil
+
+  @doc false
+  def handle_remind_overdue_action(bot_name, action, _intent_id, details, _endorsements) do
+    BotArmyRuntime.NATS.Publisher.publish("notification.route.request", %{
+      "event_id" => UUID.uuid4(),
+      "triggered_by" => bot_name,
+      "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601(),
+      "category" => "task",
+      "urgency" => "high",
+      "title" => "Overdue chore reminder",
+      "body" => overdue_body(details)
+    })
+  end
+
+  defp overdue_body(details) do
+    count = Map.get(details, :overdue_count, Map.get(details, :value, 0))
+
+    "You have #{count} overdue chore#{if count > 1, do: "s", else: ""} that need attention."
   end
 
   # ───────────────────────────────────────────────────────────────────────────

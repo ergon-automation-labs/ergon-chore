@@ -41,6 +41,11 @@ defmodule BotArmyChore.NATS.Consumer do
       subject: "bot_army.chore.intent.remind_overdue",
       type: :subscribe,
       description: "Intent: remind about overdue chores"
+    },
+    %{
+      subject: "discord.check_in.response",
+      type: :subscribe,
+      description: "Discord check-in response (done/defer)"
     }
   ]
 
@@ -157,7 +162,25 @@ defmodule BotArmyChore.NATS.Consumer do
       "chore.schedule.list" -> handle_schedule_list(nats_msg)
       "chore.assignment.rotate" -> BotArmyChore.Handlers.TaskHandler.handle_rotate(message)
       "chore.assignment.list" -> handle_assignment_list(nats_msg)
+      "discord.check_in.response" -> handle_check_in_response(message)
       _ -> Logger.debug("Unknown Chore event type: #{event}")
+    end
+  end
+
+  defp handle_check_in_response(message) do
+    payload = message["payload"] || %{}
+
+    if payload["bot_name"] == "chore" and payload["status"] == "done" do
+      complete_payload = %{
+        "event_id" => message["event_id"] || Elixir.UUID.uuid4(),
+        "tenant_id" => message["tenant_id"] || BotArmyCore.Tenant.default_tenant_id(),
+        "user_id" => payload["user_id"],
+        "payload" => %{
+          "task_id" => payload["task_id"]
+        }
+      }
+
+      BotArmyChore.Handlers.TaskHandler.handle_complete(complete_payload)
     end
   end
 

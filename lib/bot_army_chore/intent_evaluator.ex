@@ -69,6 +69,7 @@ defmodule BotArmyChore.IntentEvaluator do
         {:noreply, state}
 
       {action, details, config} ->
+        Logger.debug("[Chore.Intent] Processing #{action} defer reply")
         DeferHandler.process_reply(@bot_name, conversation_id, body, details, config)
         {:noreply, %{state | pending_defers: Map.delete(state.pending_defers, conversation_id)}}
     end
@@ -191,7 +192,7 @@ defmodule BotArmyChore.IntentEvaluator do
       "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601(),
       "category" => "task",
       "urgency" => "high",
-      "title" => "Overdue chore reminder",
+      "title" => "#{String.capitalize(action)}: overdue chores",
       "body" => overdue_body(details)
     })
   end
@@ -210,7 +211,7 @@ defmodule BotArmyChore.IntentEvaluator do
     [
       prompt_builder: &__MODULE__.build_remind_overdue_defer_prompt/3,
       delivery_fn: &__MODULE__.deliver_defer_message/4,
-      llm_intent: "classify",
+      llm_intent: "ask",
       timeout_ms: 15_000
     ]
   end
@@ -222,9 +223,8 @@ defmodule BotArmyChore.IntentEvaluator do
     overdue = get_in(context, [:summary, :overdue_count]) || 0
 
     %{
-      "intent" => "classify",
       "text" =>
-        "The user has #{overdue} overdue chore(s) but conditions don't warrant a full reminder " <>
+        "The user has #{overdue} overdue chore(s) but conditions don't warrant a full #{action} " <>
           "(score #{Float.round(details.score, 2)}, reason: #{details.reason}). " <>
           "Write a one-sentence gentle nudge about their overdue chores. " <>
           "If not useful, respond: skip"

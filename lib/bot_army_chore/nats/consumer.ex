@@ -170,17 +170,34 @@ defmodule BotArmyChore.NATS.Consumer do
   defp handle_check_in_response(message) do
     payload = message["payload"] || %{}
 
-    if payload["bot_name"] == "chore" and payload["status"] == "done" do
-      complete_payload = %{
-        "event_id" => message["event_id"] || Elixir.UUID.uuid4(),
-        "tenant_id" => message["tenant_id"] || BotArmyCore.Tenant.default_tenant_id(),
-        "user_id" => payload["user_id"],
-        "payload" => %{
-          "task_id" => payload["task_id"]
-        }
-      }
+    if payload["bot_name"] == "chore" do
+      case payload["status"] do
+        "done" ->
+          complete_payload = %{
+            "event_id" => message["event_id"] || Elixir.UUID.uuid4(),
+            "tenant_id" => message["tenant_id"] || BotArmyCore.Tenant.default_tenant_id(),
+            "user_id" => payload["user_id"],
+            "payload" => %{
+              "task_id" => payload["task_id"]
+            }
+          }
 
-      BotArmyChore.Handlers.TaskHandler.handle_complete(complete_payload)
+          BotArmyChore.Handlers.TaskHandler.handle_complete(complete_payload)
+
+        "deferred" ->
+          defer_count =
+            BotArmyRuntime.DeferTracker.record_defer(
+              to_string(payload["user_id"]),
+              "chore"
+            )
+
+          Logger.info(
+            "[Chore] User #{payload["user_id"]} deferred check-in. Count: #{defer_count}"
+          )
+
+        _ ->
+          :ok
+      end
     end
   end
 

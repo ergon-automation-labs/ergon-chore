@@ -146,6 +146,18 @@ defmodule BotArmyChore.Handlers.TaskHandler do
               "Chore task completed: event_id=#{event_id}, task_id=#{payload["task_id"]}"
             )
 
+            # Record outcome: assigned chore was completed
+            try do
+              BotArmyLearning.OutcomeTracker.record(
+                payload["task_id"],
+                "chore.completion",
+                "assigned",
+                "completed"
+              )
+            rescue
+              _ -> :ok
+            end
+
             advance_recurring_task(tenant_id, task)
             publish_event("chore.task.completed", payload, event_id, tenant_id, user_id)
 

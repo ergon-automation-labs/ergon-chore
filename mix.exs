@@ -4,7 +4,7 @@ defmodule BotArmyChore.MixProject do
   def project do
     [
       app: :bot_army_chore,
-      version: "0.1.36",
+      version: "0.1.37",
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       deps: deps(),

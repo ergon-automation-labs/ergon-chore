@@ -183,6 +183,8 @@ defmodule BotArmyChore.Handlers.TaskHandler do
          :ok <- require_field(payload, "frequency"),
          :ok <- require_field(payload, "category") do
       :ok
+    else
+      error -> error
     end
   end
 
@@ -192,6 +194,8 @@ defmodule BotArmyChore.Handlers.TaskHandler do
     with :ok <- require_field(payload, "task_id"),
          :ok <- require_field(payload, "assigned_to") do
       :ok
+    else
+      error -> error
     end
   end
 

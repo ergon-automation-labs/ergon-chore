@@ -81,36 +81,34 @@ defmodule BotArmyChore.PulsePublisher do
   end
 
   defp publish_pulse(metrics) do
-    try do
-      health_signal =
-        if metrics.overdue > 0, do: "degraded", else: "nominal"
+    health_signal =
+      if metrics.overdue > 0, do: "degraded", else: "nominal"
 
-      payload = %{
-        "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601(),
-        "service" => "chore",
-        "health_signal" => health_signal,
-        "metrics" => %{
-          "active_chores" => metrics.active_chores,
-          "completed" => metrics.completed,
-          "overdue" => metrics.overdue
-        },
-        "observations" => %{
-          "overdue_count" => metrics.overdue
-        }
+    payload = %{
+      "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601(),
+      "service" => "chore",
+      "health_signal" => health_signal,
+      "metrics" => %{
+        "active_chores" => metrics.active_chores,
+        "completed" => metrics.completed,
+        "overdue" => metrics.overdue
+      },
+      "observations" => %{
+        "overdue_count" => metrics.overdue
       }
+    }
 
-      subject = "bot.chore.pulse"
+    subject = "bot.chore.pulse"
 
-      case BotArmyRuntime.NATS.Publisher.publish(subject, payload) do
-        {:ok, _} -> Logger.info("[PulsePublisher] Published chore pulse")
-        {:error, reason} -> Logger.warning("[PulsePublisher] Publish failed: #{inspect(reason)}")
-      end
-
-      payload
-    rescue
-      e ->
-        Logger.error("[PulsePublisher] Error: #{inspect(e)}")
-        %{}
+    case BotArmyRuntime.NATS.Publisher.publish(subject, payload) do
+      {:ok, _} -> Logger.info("[PulsePublisher] Published chore pulse")
+      {:error, reason} -> Logger.warning("[PulsePublisher] Publish failed: #{inspect(reason)}")
     end
+
+    payload
+  rescue
+    e ->
+      Logger.error("[PulsePublisher] Error: #{inspect(e)}")
+      %{}
   end
 end

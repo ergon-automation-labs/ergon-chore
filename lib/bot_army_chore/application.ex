@@ -78,6 +78,9 @@ defmodule BotArmyChore.Application do
   defp maybe_add_outcome_tracker(children) do
     if @env == :test,
       do: children,
-      else: [{BotArmyLearning.OutcomeTracker, [repo: BotArmyChore.Repo]} | children]
+      else: [
+        {BotArmyLearning.OutcomeTracker, [repo: BotArmyChore.Repo, name: :chore_outcome_tracker]}
+        | children
+      ]
   end
 end

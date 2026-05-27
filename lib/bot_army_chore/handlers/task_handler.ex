@@ -152,7 +152,8 @@ defmodule BotArmyChore.Handlers.TaskHandler do
                 payload["task_id"],
                 "chore.completion",
                 "assigned",
-                "completed"
+                "completed",
+                :chore_outcome_tracker
               )
             rescue
               _ -> :ok

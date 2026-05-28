@@ -82,7 +82,10 @@ defmodule BotArmyChore.NATS.Consumer do
           Logger.info("Chore consumer subscribed to #{subject}")
         end)
 
-        BotArmyRuntime.Registry.register("chore", @subjects, @version)
+        deployment_status =
+          Application.get_env(:bot_army_chore, :deployment_status, "experimental")
+
+        Registry.register("chore", @subjects, @version, deployment_status)
         Process.send_after(self(), :registry_heartbeat, @registry_heartbeat_ms)
         {:noreply, %{state | conn: conn}}
 
@@ -140,7 +143,10 @@ defmodule BotArmyChore.NATS.Consumer do
   @impl true
   def handle_info(:registry_heartbeat, state) do
     if state.subscriptions != [] do
-      BotArmyRuntime.Registry.register("chore", @subjects, @version)
+      BotArmyRuntime.deployment_status() =
+        Application.get_env(:bot_army_chore, :deployment_status, "experimental")
+
+      Registry.register("chore", @subjects, @version, deployment_status)
       Process.send_after(self(), :registry_heartbeat, @registry_heartbeat_ms)
     end
 

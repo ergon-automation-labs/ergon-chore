@@ -1,5 +1,7 @@
 import Config
 
+config :bot_army_chore, :deployment_status, "experimental"
+
 # Load .env file for local development/testing
 if File.exists?(".env") do
   File.stream!(".env")

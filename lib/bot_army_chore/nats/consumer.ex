@@ -143,7 +143,7 @@ defmodule BotArmyChore.NATS.Consumer do
   @impl true
   def handle_info(:registry_heartbeat, state) do
     if state.subscriptions != [] do
-      BotArmyRuntime.deployment_status() =
+      deployment_status =
         Application.get_env(:bot_army_chore, :deployment_status, "experimental")
 
       Registry.register("chore", @subjects, @version, deployment_status)

@@ -15,7 +15,7 @@ defmodule ChoreBot.Release do
 
   def migrate do
     MigrationRunner.run(
-      repo_module: ChoreBot.Repo,
+      repo_module: BotArmyChore.Repo,
       app_module: @app
     )
   end

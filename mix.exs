@@ -4,13 +4,13 @@ defmodule BotArmyChore.MixProject do
   def project do
     [
       app: :bot_army_chore,
-      version: "0.1.44",
+      version: "0.1.45",
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       releases: [
         chore_bot: [
-          applications: [bot_army_chore: :permanent]
+          applications: [bot_army_library_runtime: :permanent, bot_army_chore: :permanent]
         ]
       ]
     ]

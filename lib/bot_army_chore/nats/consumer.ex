@@ -26,6 +26,8 @@ defmodule BotArmyChore.NATS.Consumer do
   use GenServer
   require Logger
 
+  alias BotArmyRuntime.Registry
+
   @reconnect_delay_ms 5000
   @version Mix.Project.config()[:version]
   @registry_heartbeat_ms 20_000

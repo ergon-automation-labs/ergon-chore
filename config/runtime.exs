@@ -5,7 +5,7 @@ import Config
 
 # Database configuration at runtime
 # Priority: BOT_ARMY_CHORE_DB_* (set by Salt/Jenkins) > DATABASE_* (from .env for local dev) > defaults
-config :bot_army_chore, ChoreBot.Repo,
+config :bot_army_chore, BotArmyChore.Repo,
   database:
     System.get_env("BOT_ARMY_CHORE_DB_NAME") || System.get_env("DATABASE_NAME") ||
       "ergon_chore_dev",

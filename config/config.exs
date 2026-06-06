@@ -20,7 +20,7 @@ end
 config :bot_army_chore, :household_members, ["Alice", "Bob", "Charlie"]
 
 # Ecto repositories for migrations
-config :bot_army_chore, ecto_repos: [ChoreBot.Repo]
+config :bot_army_chore, ecto_repos: [BotArmyChore.Repo]
 
 # Intent thresholds for chore heartbeat decisions
 config :bot_army_chore, :intent_thresholds, %{
@@ -47,7 +47,7 @@ db_config = [
   pool_size: 10
 ]
 
-config :bot_army_chore, ChoreBot.Repo, db_config
+config :bot_army_chore, BotArmyChore.Repo, db_config
 
 # Import environment-specific config
 if File.exists?("config/#{Mix.env()}.exs") do

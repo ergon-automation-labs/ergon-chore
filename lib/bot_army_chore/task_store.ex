@@ -150,7 +150,7 @@ defmodule BotArmyChore.TaskStore do
     # Gracefully handle database unavailability (e.g., in tests)
     state =
       try do
-        tasks = BotArmyChore.Repo.all(BotArmyChore.Schemas.Task)
+        tasks = ChoreBot.Repo.all(BotArmyChore.Schemas.Task)
 
         Enum.reduce(tasks, %{}, fn task, acc ->
           Map.put(acc, task.id |> to_string(), schema_to_map(task))
@@ -204,7 +204,7 @@ defmodule BotArmyChore.TaskStore do
         }
       )
 
-    case BotArmyChore.Repo.insert(changeset) do
+    case ChoreBot.Repo.insert(changeset) do
       {:ok, db_task} ->
         task = schema_to_map(db_task)
         new_state = Map.put(state, task_id, task)
@@ -226,8 +226,8 @@ defmodule BotArmyChore.TaskStore do
       _task ->
         task_uuid = Ecto.UUID.cast!(task_id)
 
-        case BotArmyChore.Repo.transaction(fn ->
-               db_task = BotArmyChore.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
+        case ChoreBot.Repo.transaction(fn ->
+               db_task = ChoreBot.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
 
                if db_task do
                  # Parse due_date if present
@@ -260,12 +260,12 @@ defmodule BotArmyChore.TaskStore do
                      }
                    )
 
-                 case BotArmyChore.Repo.update(changeset) do
+                 case ChoreBot.Repo.update(changeset) do
                    {:ok, updated} -> updated
-                   {:error, changeset} -> BotArmyChore.Repo.rollback(changeset)
+                   {:error, changeset} -> ChoreBot.Repo.rollback(changeset)
                  end
                else
-                 BotArmyChore.Repo.rollback(:not_found)
+                 ChoreBot.Repo.rollback(:not_found)
                end
              end) do
           {:ok, updated_db_task} ->
@@ -293,8 +293,8 @@ defmodule BotArmyChore.TaskStore do
       _task ->
         task_uuid = Ecto.UUID.cast!(task_id)
 
-        case BotArmyChore.Repo.transaction(fn ->
-               db_task = BotArmyChore.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
+        case ChoreBot.Repo.transaction(fn ->
+               db_task = ChoreBot.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
 
                if db_task do
                  changeset =
@@ -303,12 +303,12 @@ defmodule BotArmyChore.TaskStore do
                      %{"status" => "in_progress"}
                    )
 
-                 case BotArmyChore.Repo.update(changeset) do
+                 case ChoreBot.Repo.update(changeset) do
                    {:ok, updated} -> updated
-                   {:error, changeset} -> BotArmyChore.Repo.rollback(changeset)
+                   {:error, changeset} -> ChoreBot.Repo.rollback(changeset)
                  end
                else
-                 BotArmyChore.Repo.rollback(:not_found)
+                 ChoreBot.Repo.rollback(:not_found)
                end
              end) do
           {:ok, started_db_task} ->
@@ -336,8 +336,8 @@ defmodule BotArmyChore.TaskStore do
       _task ->
         task_uuid = Ecto.UUID.cast!(task_id)
 
-        case BotArmyChore.Repo.transaction(fn ->
-               db_task = BotArmyChore.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
+        case ChoreBot.Repo.transaction(fn ->
+               db_task = ChoreBot.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
 
                if db_task do
                  changeset =
@@ -350,12 +350,12 @@ defmodule BotArmyChore.TaskStore do
                      }
                    )
 
-                 case BotArmyChore.Repo.update(changeset) do
+                 case ChoreBot.Repo.update(changeset) do
                    {:ok, updated} -> updated
-                   {:error, changeset} -> BotArmyChore.Repo.rollback(changeset)
+                   {:error, changeset} -> ChoreBot.Repo.rollback(changeset)
                  end
                else
-                 BotArmyChore.Repo.rollback(:not_found)
+                 ChoreBot.Repo.rollback(:not_found)
                end
              end) do
           {:ok, completed_db_task} ->
@@ -446,8 +446,8 @@ defmodule BotArmyChore.TaskStore do
       _task ->
         task_uuid = Ecto.UUID.cast!(task_id)
 
-        case BotArmyChore.Repo.transaction(fn ->
-               db_task = BotArmyChore.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
+        case ChoreBot.Repo.transaction(fn ->
+               db_task = ChoreBot.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
 
                if db_task do
                  changeset =
@@ -456,12 +456,12 @@ defmodule BotArmyChore.TaskStore do
                      %{"next_due_at" => next_due_at}
                    )
 
-                 case BotArmyChore.Repo.update(changeset) do
+                 case ChoreBot.Repo.update(changeset) do
                    {:ok, updated} -> updated
-                   {:error, changeset} -> BotArmyChore.Repo.rollback(changeset)
+                   {:error, changeset} -> ChoreBot.Repo.rollback(changeset)
                  end
                else
-                 BotArmyChore.Repo.rollback(:not_found)
+                 ChoreBot.Repo.rollback(:not_found)
                end
              end) do
           {:ok, updated_db_task} ->
@@ -489,8 +489,8 @@ defmodule BotArmyChore.TaskStore do
       _task ->
         task_uuid = Ecto.UUID.cast!(task_id)
 
-        case BotArmyChore.Repo.transaction(fn ->
-               db_task = BotArmyChore.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
+        case ChoreBot.Repo.transaction(fn ->
+               db_task = ChoreBot.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
 
                if db_task do
                  changeset =
@@ -499,12 +499,12 @@ defmodule BotArmyChore.TaskStore do
                      %{"notification_level" => level, "last_notified_at" => notified_at}
                    )
 
-                 case BotArmyChore.Repo.update(changeset) do
+                 case ChoreBot.Repo.update(changeset) do
                    {:ok, updated} -> updated
-                   {:error, changeset} -> BotArmyChore.Repo.rollback(changeset)
+                   {:error, changeset} -> ChoreBot.Repo.rollback(changeset)
                  end
                else
-                 BotArmyChore.Repo.rollback(:not_found)
+                 ChoreBot.Repo.rollback(:not_found)
                end
              end) do
           {:ok, updated_db_task} ->

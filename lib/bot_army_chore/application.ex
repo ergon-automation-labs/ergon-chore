@@ -30,7 +30,7 @@ defmodule BotArmyChore.Application do
   end
 
   defp maybe_add_repo(children) do
-    if @env == :test, do: children, else: [BotArmyChore.Repo | children]
+    if @env == :test, do: children, else: [ChoreBot.Repo | children]
   end
 
   defp maybe_add_task_store(children) do
@@ -79,7 +79,7 @@ defmodule BotArmyChore.Application do
     if @env == :test,
       do: children,
       else: [
-        {BotArmyLearning.OutcomeTracker, [repo: BotArmyChore.Repo, name: :chore_outcome_tracker]}
+        {BotArmyLearning.OutcomeTracker, [repo: ChoreBot.Repo, name: :chore_outcome_tracker]}
         | children
       ]
   end

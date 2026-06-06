@@ -20,7 +20,7 @@ end
 config :bot_army_chore, :household_members, ["Alice", "Bob", "Charlie"]
 
 # Ecto repositories for migrations
-config :bot_army_chore, ecto_repos: [BotArmyChore.Repo]
+config :bot_army_chore, ecto_repos: [ChoreBot.Repo]
 
 # Intent thresholds for chore heartbeat decisions
 config :bot_army_chore, :intent_thresholds, %{
@@ -30,7 +30,7 @@ config :bot_army_chore, :intent_thresholds, %{
 
 # Database configuration
 # Priority: BOT_ARMY_CHORE_DB_* (set by Salt/Jenkins) > DATABASE_* (from .env for local dev) > defaults
-config :bot_army_chore, BotArmyChore.Repo,
+db_config = [
   database:
     System.get_env("BOT_ARMY_CHORE_DB_NAME") || System.get_env("DATABASE_NAME", "ergon_chore_dev"),
   hostname:
@@ -45,6 +45,9 @@ config :bot_army_chore, BotArmyChore.Repo,
     System.get_env("BOT_ARMY_CHORE_DB_PASSWORD") ||
       System.get_env("DATABASE_PASSWORD", "postgres"),
   pool_size: 10
+]
+
+config :bot_army_chore, ChoreBot.Repo, db_config
 
 # Import environment-specific config
 if File.exists?("config/#{Mix.env()}.exs") do

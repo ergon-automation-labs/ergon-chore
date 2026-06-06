@@ -1,4 +1,4 @@
-defmodule BotArmyChore.Repo.Migrations.EnforceTenantNotNull do
+defmodule BotArmyChore.Repo.Migrations.EnforceTenantAndUserIdNotNull do
   use Ecto.Migration
 
   def up do

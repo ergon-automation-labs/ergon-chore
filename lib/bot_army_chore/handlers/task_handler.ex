@@ -35,6 +35,10 @@ defmodule BotArmyChore.Handlers.TaskHandler do
           {:ok, task} ->
             Logger.info("Chore task created: event_id=#{event_id}, task_id=#{task["id"]}")
 
+            BotArmyRuntime.Outcomes.emit("chore", "task", "chore_created", 1,
+              metadata: %{task_id: task["id"], tenant_id: tenant_id}
+            )
+
             publish_event(
               "chore.task.created",
               Map.put(stamped_payload, "task_id", task["id"]),
@@ -45,11 +49,21 @@ defmodule BotArmyChore.Handlers.TaskHandler do
 
           {:error, reason} ->
             Logger.warning("Failed to persist chore task: #{inspect(reason)}")
+
+            BotArmyRuntime.Outcomes.emit("chore", "task", "chore_create_failed", 0,
+              metadata: %{reason: inspect(reason), tenant_id: tenant_id}
+            )
+
             publish_error(event_id, reason, "Failed to persist chore task", tenant_id, user_id)
         end
 
       {:error, reason} ->
         Logger.warning("Invalid chore task payload: #{inspect(reason)}")
+
+        BotArmyRuntime.Outcomes.emit("chore", "task", "chore_create_invalid", 0,
+          metadata: %{reason: inspect(reason), tenant_id: tenant_id}
+        )
+
         publish_error(event_id, reason, "Invalid chore task data", tenant_id, user_id)
     end
   end
@@ -72,14 +86,36 @@ defmodule BotArmyChore.Handlers.TaskHandler do
               "Chore task assigned: event_id=#{event_id}, task_id=#{payload["task_id"]}"
             )
 
+            BotArmyRuntime.Outcomes.emit("chore", "task", "chore_assigned", 1,
+              metadata: %{
+                task_id: payload["task_id"],
+                assigned_to: payload["assigned_to"],
+                tenant_id: tenant_id
+              }
+            )
+
             publish_event("chore.task.assigned", payload, event_id, tenant_id, user_id)
 
           {:error, :not_found} ->
             Logger.warning("Task not found: #{payload["task_id"]}")
+
+            BotArmyRuntime.Outcomes.emit("chore", "task", "chore_assign_not_found", 0,
+              metadata: %{task_id: payload["task_id"], tenant_id: tenant_id}
+            )
+
             publish_error(event_id, :not_found, "Task not found", tenant_id, user_id)
 
           {:error, reason} ->
             Logger.warning("Failed to assign task: #{inspect(reason)}")
+
+            BotArmyRuntime.Outcomes.emit("chore", "task", "chore_assign_failed", 0,
+              metadata: %{
+                task_id: payload["task_id"],
+                reason: inspect(reason),
+                tenant_id: tenant_id
+              }
+            )
+
             publish_error(event_id, reason, "Failed to assign task", tenant_id, user_id)
         end
 
@@ -107,6 +143,10 @@ defmodule BotArmyChore.Handlers.TaskHandler do
           {:ok, next_person} ->
             Logger.info(
               "Chore rotated: event_id=#{event_id}, task_id=#{task_id}, assigned_to=#{next_person}"
+            )
+
+            BotArmyRuntime.Outcomes.emit("chore", "task", "chore_rotated", 1,
+              metadata: %{task_id: task_id, assigned_to: next_person, tenant_id: tenant_id}
             )
 
             publish_event(
@@ -144,6 +184,10 @@ defmodule BotArmyChore.Handlers.TaskHandler do
           {:ok, task} ->
             Logger.info(
               "Chore task completed: event_id=#{event_id}, task_id=#{payload["task_id"]}"
+            )
+
+            BotArmyRuntime.Outcomes.emit("chore", "task", "chore_completed", 1,
+              metadata: %{task_id: payload["task_id"], tenant_id: tenant_id}
             )
 
             # Record outcome: assigned chore was completed

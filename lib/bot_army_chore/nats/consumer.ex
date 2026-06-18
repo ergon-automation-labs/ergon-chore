@@ -229,7 +229,8 @@ defmodule BotArmyChore.NATS.Consumer do
 
   defp handle_schedule_list(nats_msg) do
     if nats_msg.reply_to do
-      tasks = BotArmyChore.TaskStore.list_overdue_recurring()
+      tenant_id = BotArmyCore.Tenant.default_tenant_id()
+      tasks = BotArmyChore.TaskStore.list_overdue_recurring(tenant_id)
 
       task_list =
         Enum.map(tasks, fn t ->

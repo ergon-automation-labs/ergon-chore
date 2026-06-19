@@ -20,5 +20,7 @@ config :bot_army_chore, BotArmyChore.Repo,
   password:
     System.get_env("BOT_ARMY_CHORE_DB_PASSWORD") || System.get_env("DATABASE_PASSWORD") ||
       "postgres",
-  pool_size: 3,
+  pool_size: System.get_env("BOT_POOL_SIZE", "10") |> String.to_integer(),
+
+
   ssl: false

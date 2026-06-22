@@ -26,7 +26,6 @@ defmodule BotArmyChore.NATS.Consumer do
   use GenServer
   require Logger
 
-  @reconnect_delay_ms 5000
   @version Mix.Project.config()[:version]
   @registry_heartbeat_ms 20_000
 
@@ -64,7 +63,8 @@ defmodule BotArmyChore.NATS.Consumer do
     state = %{
       subscriptions: [],
       conn: nil,
-      opts: opts
+      opts: opts,
+      reconnect_attempt: 0
     }
 
     {:ok, state, {:continue, :subscribe}}
@@ -97,12 +97,15 @@ defmodule BotArmyChore.NATS.Consumer do
         end
 
       {:error, reason} ->
+        next_attempt = state.reconnect_attempt + 1
+        delay = BotArmyRuntime.NATS.Connection.calculate_backoff(state.reconnect_attempt, 1000)
+
         Logger.warning(
-          "Failed to get NATS connection: #{inspect(reason)}, retrying in #{@reconnect_delay_ms}ms"
+          "Failed to get NATS connection: #{inspect(reason)}, retrying in #{delay}ms (attempt #{next_attempt})"
         )
 
-        Process.send_after(self(), :retry_subscribe, @reconnect_delay_ms)
-        {:noreply, state}
+        Process.send_after(self(), :retry_subscribe, delay)
+        {:noreply, %{state | reconnect_attempt: next_attempt}}
     end
   end
 
@@ -136,15 +139,21 @@ defmodule BotArmyChore.NATS.Consumer do
 
   @impl true
   def handle_info({:nats, :disconnected}, state) do
-    Logger.warning("Disconnected from NATS, will reconnect")
-    Process.send_after(self(), :reconnect, @reconnect_delay_ms)
-    {:noreply, %{state | conn: nil, subscriptions: []}}
+    next_attempt = state.reconnect_attempt + 1
+    delay = BotArmyRuntime.NATS.Connection.calculate_backoff(state.reconnect_attempt, 1000)
+
+    Logger.warning(
+      "Disconnected from NATS, will reconnect in #{delay}ms (attempt #{next_attempt})"
+    )
+
+    Process.send_after(self(), :reconnect, delay)
+    {:noreply, %{state | conn: nil, subscriptions: [], reconnect_attempt: next_attempt}}
   end
 
   @impl true
   def handle_info({:nats, :connected}, state) do
     Logger.info("Reconnected to NATS, re-subscribing")
-    {:noreply, state, {:continue, :subscribe}}
+    {:noreply, %{state | reconnect_attempt: 0}, {:continue, :subscribe}}
   end
 
   @impl true

@@ -38,7 +38,28 @@ defmodule BotArmyChore.Application do
   end
 
   defp maybe_add_scheduler(children) do
-    if @env == :test, do: children, else: [{BotArmyChore.Scheduler, []} | children]
+    if @env == :test do
+      children
+    else
+      reminder_config =
+        BotArmyReminderScheduler.Scheduler.child_spec(
+          bot_name: "chore",
+          check_interval_minutes: 60,
+          reminders: [
+            %{
+              thing_type: "task",
+              check_fn: &BotArmyChore.Scheduler.check_overdue_tasks/0,
+              urgency_tiers: [
+                {1, "due"},
+                {3, "overdue"},
+                {7, "urgent"}
+              ]
+            }
+          ]
+        )
+
+      [reminder_config | children]
+    end
   end
 
   defp maybe_add_pulse_publisher(children) do

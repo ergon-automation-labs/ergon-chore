@@ -35,11 +35,11 @@ if [[ $push_to_main -eq 1 ]]; then
     exit 1
   }
 
-  # Compile local path dependencies first so they're available during code compilation
-  echo "📦 Compiling path dependencies..."
+  # Ensure path dependencies are available (compile their deps)
+  echo "📦 Preparing path dependencies..."
   for path_dep in ../bot_army_library_*; do
     if [ -d "$path_dep" ]; then
-      (cd "$path_dep" && HEX_HOME="$HEX_HOME" MIX_HOME="$MIX_HOME" "$MIX_BIN" compile) || true
+      (cd "$path_dep" && HEX_HOME="$HEX_HOME" MIX_HOME="$MIX_HOME" "$MIX_BIN" deps.compile) || true
     fi
   done
   echo ""

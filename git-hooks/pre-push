@@ -36,7 +36,7 @@ if [[ $push_to_main -eq 1 ]]; then
   }
 
   echo "🔨 Compiling code..."
-  "$MIX_BIN" compile --all-deps --force || {
+  "$MIX_BIN" compile --force || {
     echo "❌ Compilation failed - push aborted"
     exit 1
   }

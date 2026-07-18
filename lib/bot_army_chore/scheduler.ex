@@ -19,21 +19,19 @@ defmodule BotArmyChore.Scheduler do
   Called by BotArmyReminderScheduler on a periodic basis (default: hourly).
   Returns list of {task_id, days_overdue} tuples for tasks that are overdue.
   """
-  def check_overdue_tasks() do
-    try do
-      BotArmyChore.ChoreStore.get_all_tasks()
-      |> Enum.filter(fn task ->
-        task.due_date && DateTime.compare(DateTime.utc_now(), task.due_date) == :gt
-      end)
-      |> Enum.map(fn task ->
-        days_overdue = calculate_days_overdue(task.due_date)
-        {task.id, days_overdue}
-      end)
-    rescue
-      e ->
-        Logger.error("[Scheduler] Error checking overdue tasks: #{inspect(e)}")
-        []
-    end
+  def check_overdue_tasks do
+    BotArmyChore.ChoreStore.get_all_tasks()
+    |> Enum.filter(fn task ->
+      task.due_date && DateTime.compare(DateTime.utc_now(), task.due_date) == :gt
+    end)
+    |> Enum.map(fn task ->
+      days_overdue = calculate_days_overdue(task.due_date)
+      {task.id, days_overdue}
+    end)
+  rescue
+    e ->
+      Logger.error("[Scheduler] Error checking overdue tasks: #{inspect(e)}")
+      []
   end
 
   defp calculate_days_overdue(due_date) do
@@ -47,6 +45,6 @@ defmodule BotArmyChore.Scheduler do
     DateTime.utc_now()
     |> DateTime.diff(due_datetime, :second)
     # seconds per day
-    |> div(86400)
+    |> div(86_400)
   end
 end

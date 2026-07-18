@@ -192,7 +192,7 @@ defmodule BotArmyChore.Handlers.TaskHandler do
 
             # Record outcome: assigned chore was completed
             try do
-              BotArmyLearning.OutcomeTracker.record(
+              BotArmyLibraryLearning.OutcomeTracker.record(
                 payload["task_id"],
                 "chore.completion",
                 "assigned",

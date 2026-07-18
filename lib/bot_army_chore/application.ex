@@ -100,7 +100,7 @@ defmodule BotArmyChore.Application do
     if @env == :test,
       do: children,
       else: [
-        {BotArmyLearning.OutcomeTracker, [repo: BotArmyChore.Repo, name: :chore_outcome_tracker]}
+        {BotArmyLibraryLearning.OutcomeTracker, [repo: BotArmyChore.Repo, name: :chore_outcome_tracker]}
         | children
       ]
   end

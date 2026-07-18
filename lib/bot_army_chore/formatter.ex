@@ -9,7 +9,7 @@ defmodule BotArmyChore.Formatter do
   """
 
   require Logger
-  alias BotArmyRuntime.Personality.Formatter
+  alias BotArmyLibraryRuntime.Personality.Formatter
 
   @doc """
   Format task due notification.

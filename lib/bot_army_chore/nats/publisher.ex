@@ -58,7 +58,7 @@ defmodule BotArmyChore.NATS.Publisher do
   defp do_publish(subject, body) do
     case Jason.decode(body) do
       {:ok, payload} ->
-        BotArmyRuntime.NATS.Publisher.publish(subject, payload)
+        BotArmyLibraryRuntime.NATS.Publisher.publish(subject, payload)
 
       {:error, reason} ->
         Logger.error("Failed to decode body for #{subject}: #{inspect(reason)}")

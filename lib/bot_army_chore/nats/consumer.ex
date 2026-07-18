@@ -6,7 +6,7 @@ defmodule BotArmyChore.NATS.Consumer do
   - `chore.task.*` - Chore task events
   - `chore.assignment.*` - Chore assignment events
 
-  Messages are decoded using BotArmyCore.NATS.Decoder and routed to
+  Messages are decoded using BotArmyLibraryCore.NATS.Decoder and routed to
   appropriate handlers based on the event type.
 
   ## Features
@@ -72,9 +72,9 @@ defmodule BotArmyChore.NATS.Consumer do
 
   @impl true
   def handle_continue(:subscribe, state) do
-    case GenServer.call(BotArmyRuntime.NATS.Connection, :get_connection, 5_000) do
+    case GenServer.call(BotArmyLibraryRuntime.NATS.Connection, :get_connection, 5_000) do
       {:ok, conn} ->
-        BotArmyRuntime.NATS.Connection.subscribe_to_status()
+        BotArmyLibraryRuntime.NATS.Connection.subscribe_to_status()
         Logger.info("Connected to NATS, subscribing to chore topics")
 
         Enum.each(@subjects, fn %{subject: subject} ->
@@ -98,7 +98,7 @@ defmodule BotArmyChore.NATS.Consumer do
 
       {:error, reason} ->
         next_attempt = state.reconnect_attempt + 1
-        delay = BotArmyRuntime.NATS.Connection.calculate_backoff(state.reconnect_attempt, 1000)
+        delay = BotArmyLibraryRuntime.NATS.Connection.calculate_backoff(state.reconnect_attempt, 1000)
 
         Logger.warning(
           "Failed to get NATS connection: #{inspect(reason)}, retrying in #{delay}ms (attempt #{next_attempt})"
@@ -116,10 +116,10 @@ defmodule BotArmyChore.NATS.Consumer do
 
   @impl true
   def handle_info({:msg, msg}, state) do
-    BotArmyRuntime.Tracing.with_consumer_span(msg.topic, Map.get(msg, :headers, []), fn ->
+    BotArmyLibraryRuntime.Tracing.with_consumer_span(msg.topic, Map.get(msg, :headers, []), fn ->
       Logger.debug("Received NATS message on subject: #{msg.topic}")
 
-      case BotArmyCore.NATS.Decoder.decode(msg.body) do
+      case BotArmyLibraryCore.NATS.Decoder.decode(msg.body) do
         {:ok, decoded_message} ->
           route_message(decoded_message, msg)
 
@@ -140,7 +140,7 @@ defmodule BotArmyChore.NATS.Consumer do
   @impl true
   def handle_info({:nats, :disconnected}, state) do
     next_attempt = state.reconnect_attempt + 1
-    delay = BotArmyRuntime.NATS.Connection.calculate_backoff(state.reconnect_attempt, 1000)
+    delay = BotArmyLibraryRuntime.NATS.Connection.calculate_backoff(state.reconnect_attempt, 1000)
 
     Logger.warning(
       "Disconnected from NATS, will reconnect in #{delay}ms (attempt #{next_attempt})"
@@ -174,7 +174,7 @@ defmodule BotArmyChore.NATS.Consumer do
   end
 
   defp register_with_retry(bot, subjects, version, status, attempts) do
-    BotArmyRuntime.Registry.register(bot, subjects, version, status)
+    BotArmyLibraryRuntime.Registry.register(bot, subjects, version, status)
     :ok
   rescue
     _e ->
@@ -210,7 +210,7 @@ defmodule BotArmyChore.NATS.Consumer do
         "done" ->
           complete_payload = %{
             "event_id" => message["event_id"] || Elixir.UUID.uuid4(),
-            "tenant_id" => message["tenant_id"] || BotArmyCore.Tenant.default_tenant_id(),
+            "tenant_id" => message["tenant_id"] || BotArmyLibraryCore.Tenant.default_tenant_id(),
             "user_id" => payload["user_id"],
             "payload" => %{
               "task_id" => payload["task_id"]
@@ -221,7 +221,7 @@ defmodule BotArmyChore.NATS.Consumer do
 
         "deferred" ->
           defer_count =
-            BotArmyRuntime.DeferTracker.record_defer(
+            BotArmyLibraryRuntime.DeferTracker.record_defer(
               to_string(payload["user_id"]),
               "chore"
             )
@@ -238,7 +238,7 @@ defmodule BotArmyChore.NATS.Consumer do
 
   defp handle_schedule_list(nats_msg) do
     if nats_msg.reply_to do
-      tenant_id = BotArmyCore.Tenant.default_tenant_id()
+      tenant_id = BotArmyLibraryCore.Tenant.default_tenant_id()
       tasks = BotArmyChore.TaskStore.list_overdue_recurring(tenant_id)
 
       task_list =
@@ -256,7 +256,7 @@ defmodule BotArmyChore.NATS.Consumer do
         "tasks" => task_list
       }
 
-      case GenServer.call(BotArmyRuntime.NATS.Connection, :get_connection, 5_000) do
+      case GenServer.call(BotArmyLibraryRuntime.NATS.Connection, :get_connection, 5_000) do
         {:ok, conn} ->
           Gnat.pub(conn, nats_msg.reply_to, Jason.encode!(response))
           Logger.debug("Published schedule list response")
@@ -282,7 +282,7 @@ defmodule BotArmyChore.NATS.Consumer do
         "assignments" => assignments
       }
 
-      case GenServer.call(BotArmyRuntime.NATS.Connection, :get_connection, 5_000) do
+      case GenServer.call(BotArmyLibraryRuntime.NATS.Connection, :get_connection, 5_000) do
         {:ok, conn} ->
           Gnat.pub(conn, nats_msg.reply_to, Jason.encode!(response))
           Logger.debug("Published assignment list response")

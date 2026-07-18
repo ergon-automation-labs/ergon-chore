@@ -20,7 +20,7 @@ defmodule BotArmyChore.Handlers.TaskHandler do
   def handle_create(message) do
     event_id = message["event_id"]
     payload = message["payload"]
-    %{tenant_id: tenant_id, user_id: user_id} = BotArmyCore.Tenant.extract_context(message)
+    %{tenant_id: tenant_id, user_id: user_id} = BotArmyLibraryCore.Tenant.extract_context(message)
 
     # Stamp context into payload
     stamped_payload =
@@ -35,7 +35,7 @@ defmodule BotArmyChore.Handlers.TaskHandler do
           {:ok, task} ->
             Logger.info("Chore task created: event_id=#{event_id}, task_id=#{task["id"]}")
 
-            BotArmyRuntime.Outcomes.emit("chore", "task", "chore_created", 1,
+            BotArmyLibraryRuntime.Outcomes.emit("chore", "task", "chore_created", 1,
               metadata: %{task_id: task["id"], tenant_id: tenant_id}
             )
 
@@ -50,7 +50,7 @@ defmodule BotArmyChore.Handlers.TaskHandler do
           {:error, reason} ->
             Logger.warning("Failed to persist chore task: #{inspect(reason)}")
 
-            BotArmyRuntime.Outcomes.emit("chore", "task", "chore_create_failed", 0,
+            BotArmyLibraryRuntime.Outcomes.emit("chore", "task", "chore_create_failed", 0,
               metadata: %{reason: inspect(reason), tenant_id: tenant_id}
             )
 
@@ -60,7 +60,7 @@ defmodule BotArmyChore.Handlers.TaskHandler do
       {:error, reason} ->
         Logger.warning("Invalid chore task payload: #{inspect(reason)}")
 
-        BotArmyRuntime.Outcomes.emit("chore", "task", "chore_create_invalid", 0,
+        BotArmyLibraryRuntime.Outcomes.emit("chore", "task", "chore_create_invalid", 0,
           metadata: %{reason: inspect(reason), tenant_id: tenant_id}
         )
 
@@ -76,7 +76,7 @@ defmodule BotArmyChore.Handlers.TaskHandler do
   def handle_assign(message) do
     event_id = message["event_id"]
     payload = message["payload"]
-    %{tenant_id: tenant_id, user_id: user_id} = BotArmyCore.Tenant.extract_context(message)
+    %{tenant_id: tenant_id, user_id: user_id} = BotArmyLibraryCore.Tenant.extract_context(message)
 
     case validate_assign_payload(payload) do
       :ok ->
@@ -86,7 +86,7 @@ defmodule BotArmyChore.Handlers.TaskHandler do
               "Chore task assigned: event_id=#{event_id}, task_id=#{payload["task_id"]}"
             )
 
-            BotArmyRuntime.Outcomes.emit("chore", "task", "chore_assigned", 1,
+            BotArmyLibraryRuntime.Outcomes.emit("chore", "task", "chore_assigned", 1,
               metadata: %{
                 task_id: payload["task_id"],
                 assigned_to: payload["assigned_to"],
@@ -99,7 +99,7 @@ defmodule BotArmyChore.Handlers.TaskHandler do
           {:error, :not_found} ->
             Logger.warning("Task not found: #{payload["task_id"]}")
 
-            BotArmyRuntime.Outcomes.emit("chore", "task", "chore_assign_not_found", 0,
+            BotArmyLibraryRuntime.Outcomes.emit("chore", "task", "chore_assign_not_found", 0,
               metadata: %{task_id: payload["task_id"], tenant_id: tenant_id}
             )
 
@@ -108,7 +108,7 @@ defmodule BotArmyChore.Handlers.TaskHandler do
           {:error, reason} ->
             Logger.warning("Failed to assign task: #{inspect(reason)}")
 
-            BotArmyRuntime.Outcomes.emit("chore", "task", "chore_assign_failed", 0,
+            BotArmyLibraryRuntime.Outcomes.emit("chore", "task", "chore_assign_failed", 0,
               metadata: %{
                 task_id: payload["task_id"],
                 reason: inspect(reason),
@@ -133,7 +133,7 @@ defmodule BotArmyChore.Handlers.TaskHandler do
   def handle_rotate(message) do
     event_id = message["event_id"]
     payload = message["payload"]
-    %{tenant_id: tenant_id, user_id: user_id} = BotArmyCore.Tenant.extract_context(message)
+    %{tenant_id: tenant_id, user_id: user_id} = BotArmyLibraryCore.Tenant.extract_context(message)
 
     case validate_rotate_payload(payload) do
       :ok ->
@@ -145,7 +145,7 @@ defmodule BotArmyChore.Handlers.TaskHandler do
               "Chore rotated: event_id=#{event_id}, task_id=#{task_id}, assigned_to=#{next_person}"
             )
 
-            BotArmyRuntime.Outcomes.emit("chore", "task", "chore_rotated", 1,
+            BotArmyLibraryRuntime.Outcomes.emit("chore", "task", "chore_rotated", 1,
               metadata: %{task_id: task_id, assigned_to: next_person, tenant_id: tenant_id}
             )
 
@@ -176,7 +176,7 @@ defmodule BotArmyChore.Handlers.TaskHandler do
   def handle_complete(message) do
     event_id = message["event_id"]
     payload = message["payload"]
-    %{tenant_id: tenant_id, user_id: user_id} = BotArmyCore.Tenant.extract_context(message)
+    %{tenant_id: tenant_id, user_id: user_id} = BotArmyLibraryCore.Tenant.extract_context(message)
 
     case validate_complete_payload(payload) do
       :ok ->
@@ -186,7 +186,7 @@ defmodule BotArmyChore.Handlers.TaskHandler do
               "Chore task completed: event_id=#{event_id}, task_id=#{payload["task_id"]}"
             )
 
-            BotArmyRuntime.Outcomes.emit("chore", "task", "chore_completed", 1,
+            BotArmyLibraryRuntime.Outcomes.emit("chore", "task", "chore_completed", 1,
               metadata: %{task_id: payload["task_id"], tenant_id: tenant_id}
             )
 

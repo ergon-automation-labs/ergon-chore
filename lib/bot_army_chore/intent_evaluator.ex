@@ -5,11 +5,11 @@ defmodule BotArmyChore.IntentEvaluator do
 
   require Logger
 
-  alias BotArmyRuntime.Intent.AccumulatedContext
-  alias BotArmyRuntime.Intent.ActionHandler
-  alias BotArmyRuntime.Intent.DeferHandler
-  alias BotArmyRuntime.Intent.Publisher
-  alias BotArmyRuntime.Intent.ThresholdModel
+  alias BotArmyLibraryRuntime.Intent.AccumulatedContext
+  alias BotArmyLibraryRuntime.Intent.ActionHandler
+  alias BotArmyLibraryRuntime.Intent.DeferHandler
+  alias BotArmyLibraryRuntime.Intent.Publisher
+  alias BotArmyLibraryRuntime.Intent.ThresholdModel
 
   @bot_name "chore"
   @evaluate_interval_ms 5 * 60 * 1000
@@ -186,7 +186,7 @@ defmodule BotArmyChore.IntentEvaluator do
 
   @doc false
   def handle_remind_overdue_action(bot_name, action, _intent_id, details, _endorsements) do
-    BotArmyCore.IntegrationGates.notification_publish("notification.route.request", %{
+    BotArmyLibraryCore.IntegrationGates.notification_publish("notification.route.request", %{
       "event_id" => UUID.uuid4(),
       "triggered_by" => bot_name,
       "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601(),
@@ -241,7 +241,7 @@ defmodule BotArmyChore.IntentEvaluator do
       end
 
     if message do
-      BotArmyCore.IntegrationGates.notification_publish("notification.route.request", %{
+      BotArmyLibraryCore.IntegrationGates.notification_publish("notification.route.request", %{
         "event_id" => UUID.uuid4(),
         "triggered_by" => bot_name,
         "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601(),

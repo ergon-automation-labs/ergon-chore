@@ -209,3 +209,19 @@ push-and-publish: git-push publish-release
 
 logs:
 	@$(SCRIPTS_DIRECTORY)/tail_bot_log.sh
+
+
+
+
+
+
+
+
+.PHONY: bump-version
+
+bump-version:
+	@if [ -z "$(BUMP)" ]; then \
+		echo "Usage: make bump-version BUMP=major|minor|patch"; \
+		exit 1; \
+	fi
+	@$(MAKE) -C .. bump-version BOT=$(shell basename $(CURDIR)) BUMP=$(BUMP)

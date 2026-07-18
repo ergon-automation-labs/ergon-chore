@@ -73,7 +73,7 @@ defmodule BotArmyChore.PulsePublisher do
   defp publish_system_health(metrics) do
     health_signal = if metrics.overdue > 0, do: "degraded", else: "nominal"
 
-    BotArmyRuntime.SynapseHealth.publish(
+    BotArmyLibraryRuntime.SynapseHealth.publish(
       source: "bot_army_chore",
       service: "chore",
       health_signal: health_signal
@@ -100,7 +100,7 @@ defmodule BotArmyChore.PulsePublisher do
 
     subject = "bot.chore.pulse"
 
-    case BotArmyRuntime.NATS.Publisher.publish(subject, payload) do
+    case BotArmyLibraryRuntime.NATS.Publisher.publish(subject, payload) do
       {:ok, _} -> Logger.info("[PulsePublisher] Published chore pulse")
       {:error, reason} -> Logger.warning("[PulsePublisher] Publish failed: #{inspect(reason)}")
     end

@@ -91,7 +91,7 @@ defmodule BotArmyChore.Application do
         ]
       ]
 
-      child = {BotArmyRuntime.Intent.VetoListener, rules: veto_rules, bot_name: "chore"}
+      child = {BotArmyLibraryRuntime.Intent.VetoListener, rules: veto_rules, bot_name: "chore"}
       [child | children]
     end
   end

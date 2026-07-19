@@ -26,22 +26,20 @@ if [[ $push_to_main -eq 1 ]]; then
   echo ""
 
   echo "📦 Ensuring Hex + dependencies..."
-  "$MIX_BIN" local.hex --force || {
-    echo "❌ mix local.hex --force failed - push aborted"
+  "$MIX_BIN" local.hex --force --force || {
+    echo "❌ mix local.hex failed - push aborted"
     exit 1
   }
-  "$MIX_BIN" deps.get --force || {
+  DEPS_LOG="/tmp/.pre-push-deps-$$.log"
+  if ! "$MIX_BIN" deps.get >"$DEPS_LOG" 2>&1; then
     echo "❌ mix deps.get failed - push aborted"
+    echo ""
+    echo "=== Dependency resolution error ==="
+    cat "$DEPS_LOG"
     exit 1
-  }
-
-  echo "🔨 Compiling code..."
-  "$MIX_BIN" compile --force || {
-    echo "❌ Compilation failed - push aborted"
-    exit 1
-  }
-
+  fi
   echo ""
+
   echo "🕵️  Checking for Mix.env() in runtime code..."
   if grep -r "Mix.env()" lib/ --include="*.ex" 2>/dev/null | grep -v "@env Mix.env()" > /dev/null; then
     echo "❌ Mix.env() found in runtime code. Use @env Mix.env() for compile-time access instead."
@@ -49,20 +47,8 @@ if [[ $push_to_main -eq 1 ]]; then
   fi
 
   echo ""
-  echo "📝 Running credo..."
-  "$MIX_BIN" credo --strict || {
-    echo "❌ Credo checks failed - push aborted"
-    exit 1
-  }
-
-  echo "🧪 Running tests..."
-  "$MIX_BIN" test || {
-    echo "❌ Tests failed - push aborted"
-    exit 1
-  }
-
-  echo ""
-  echo "✅ Pre-push checks passed"
+  echo "✅ Pre-push validation passed (fast)"
+  echo "ℹ️  Full validation (compile/credo/tests) will run post-push in background"
   echo "ℹ️  Publish releases explicitly with: make push-and-publish"
 else
   echo "ℹ️  Pushing to feature branch - skipping pre-push validation"

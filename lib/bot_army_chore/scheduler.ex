@@ -1,8 +1,8 @@
 defmodule BotArmyChore.Scheduler do
   @moduledoc """
-  Chore task reminders via shared reminder scheduler library.
+  Chore task reminders via BotArmyLibraryRuntime.Reminders.
 
-  Provides check function for BotArmyReminderScheduler to determine
+  Provides check function for BotArmyLibraryRuntime.Reminders to determine
   which tasks are overdue and how many days past due.
 
   Uses urgency escalation:
@@ -16,7 +16,7 @@ defmodule BotArmyChore.Scheduler do
   @doc """
   Check for overdue chore tasks.
 
-  Called by BotArmyReminderScheduler on a periodic basis (default: hourly).
+  Called by BotArmyLibraryRuntime.Reminders on a periodic basis (default: hourly).
   Returns list of {task_id, days_overdue} tuples for tasks that are overdue.
   """
   def check_overdue_tasks do

@@ -42,7 +42,7 @@ defmodule BotArmyChore.Application do
       children
     else
       reminder_config =
-        BotArmyReminderScheduler.Scheduler.child_spec(
+        BotArmyLibraryRuntime.Reminders.child_spec(
           bot_name: "chore",
           check_interval_minutes: 60,
           reminders: [

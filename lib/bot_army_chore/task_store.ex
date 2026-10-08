@@ -538,7 +538,7 @@ defmodule BotArmyChore.TaskStore do
       "location" => task.location,
       "status" => task.status,
       "completed_at" =>
-        if(task.completed_at, do: task.completed_at |> NaiveDateTime.to_iso8601(), else: nil),
+        if(task.completed_at, do: task.completed_at |> BotArmyLibraryRuntime.Timestamp.utc_iso8601(), else: nil),
       "next_due_at" =>
         if(task.next_due_at, do: task.next_due_at |> DateTime.to_iso8601(), else: nil),
       "last_completed_at" =>
@@ -546,8 +546,8 @@ defmodule BotArmyChore.TaskStore do
       "notification_level" => task.notification_level || 0,
       "last_notified_at" =>
         if(task.last_notified_at, do: task.last_notified_at |> DateTime.to_iso8601(), else: nil),
-      "created_at" => task.inserted_at |> NaiveDateTime.to_iso8601(),
-      "updated_at" => task.updated_at |> NaiveDateTime.to_iso8601()
+      "created_at" => task.inserted_at |> BotArmyLibraryRuntime.Timestamp.utc_iso8601(),
+      "updated_at" => task.updated_at |> BotArmyLibraryRuntime.Timestamp.utc_iso8601()
     }
   end
 end

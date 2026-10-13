@@ -220,7 +220,11 @@ defmodule BotArmyChore.IntentEvaluator do
 
   @doc false
   def build_remind_overdue_defer_prompt(action, details, context) do
-    overdue = get_in(context, [:summary, :overdue_count]) || 0
+    # `context.summary` aggregates each observation type as
+    # `%{count:, values:, latest: %{value:, ...}}` — never a scalar. chore's recorder stores
+    # the quantity as the observation's `value:`, so read it through the accessor: the
+    # previous `get_in/2` rendered the whole map into the prompt text.
+    overdue = AccumulatedContext.latest_value(context, :overdue_count)
 
     %{
       "text" =>

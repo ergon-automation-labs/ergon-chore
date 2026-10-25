@@ -17,9 +17,9 @@ defmodule BotArmyChore.Handlers.TaskHandler do
 
   Validates the task data and publishes a task.created event.
   """
-  def handle_create(message) do
+  def handle_create(message, reply_to \\ nil) do
     event_id = message["event_id"]
-    payload = message["payload"]
+    payload = payload_of(message)
     %{tenant_id: tenant_id, user_id: user_id} = BotArmyLibraryCore.Tenant.extract_context(message)
 
     # Stamp context into payload
@@ -34,6 +34,7 @@ defmodule BotArmyChore.Handlers.TaskHandler do
         case task_store().create(stamped_payload) do
           {:ok, task} ->
             Logger.info("Chore task created: event_id=#{event_id}, task_id=#{task["id"]}")
+            answer(reply_to, {:ok, %{"chore" => task}})
 
             BotArmyLibraryRuntime.Outcomes.emit("chore", "task", "chore_created", 1,
               metadata: %{task_id: task["id"], tenant_id: tenant_id}
@@ -58,6 +59,7 @@ defmodule BotArmyChore.Handlers.TaskHandler do
         end
 
       {:error, reason} ->
+        answer(reply_to, {:error, "a chore needs a title, a category and a cadence", reason})
         Logger.warning("Invalid chore task payload: #{inspect(reason)}")
 
         BotArmyLibraryRuntime.Outcomes.emit("chore", "task", "chore_create_invalid", 0,
@@ -173,9 +175,9 @@ defmodule BotArmyChore.Handlers.TaskHandler do
 
   Validates the completion data and publishes a task.completed event.
   """
-  def handle_complete(message) do
+  def handle_complete(message, reply_to \\ nil) do
     event_id = message["event_id"]
-    payload = message["payload"]
+    payload = payload_of(message)
     %{tenant_id: tenant_id, user_id: user_id} = BotArmyLibraryCore.Tenant.extract_context(message)
 
     case validate_complete_payload(payload) do
@@ -204,24 +206,48 @@ defmodule BotArmyChore.Handlers.TaskHandler do
             end
 
             advance_recurring_task(tenant_id, task)
+            answer(reply_to, {:ok, %{"chore" => task}})
             publish_event("chore.task.completed", payload, event_id, tenant_id, user_id)
 
           {:error, :not_found} ->
+            answer(reply_to, {:error, "that chore is not on the list", :not_found})
             Logger.warning("Task not found: #{payload["task_id"]}")
             publish_error(event_id, :not_found, "Task not found", tenant_id, user_id)
 
           {:error, reason} ->
+            answer(reply_to, {:error, "the house could not finish that chore", :write_failed})
             Logger.warning("Failed to complete task: #{inspect(reason)}")
             publish_error(event_id, reason, "Failed to complete task", tenant_id, user_id)
         end
 
       {:error, reason} ->
+        answer(reply_to, {:error, "that press did not name a chore", reason})
         Logger.warning("Invalid chore completion payload: #{inspect(reason)}")
         publish_error(event_id, reason, "Invalid completion data", tenant_id, user_id)
     end
   end
 
   # Private functions
+
+  # A request/reply verb is asked two ways: the fleet wraps arguments in `"payload"`, a surface
+  # sends them flat. One rule, read here so no handler has to know which caller it has.
+  defp payload_of(message) when is_map(message), do: message["payload"] || message
+  defp payload_of(_message), do: %{}
+
+  # The answer to a press, when the caller left a reply address. A fire-and-forget publish gets
+  # the same work done and no answer, which is what the discord check-in does today.
+  defp answer(nil, _answer), do: :ok
+
+  defp answer(reply_to, {:ok, data}) do
+    BotArmyChore.NATS.Consumer.publish_raw(reply_to, BotArmyLibraryRuntime.NATS.Reply.ok(data))
+  end
+
+  defp answer(reply_to, {:error, sentence, code}) do
+    BotArmyChore.NATS.Consumer.publish_raw(
+      reply_to,
+      BotArmyLibraryRuntime.NATS.Reply.error(sentence, code)
+    )
+  end
 
   defp validate_create_payload(payload) when is_map(payload) do
     with :ok <- require_field(payload, "title"),

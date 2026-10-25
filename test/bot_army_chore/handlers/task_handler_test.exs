@@ -90,6 +90,46 @@ defmodule BotArmyChore.Handlers.TaskHandlerTest do
     end
   end
 
+  # A surface does not wrap its arguments in `"payload"` — it sends them flat, the way
+  # `fitness.set.record` is asked (`"payload"` for an envelope, the top level for a flat body).
+  # One rule, read once in the handler, so the two callers do the same work.
+  describe "a flat request body" do
+    test "creates the chore with no payload key" do
+      expect(BotArmyChore.TaskStoreMock, :create, fn payload ->
+        assert payload["title"] == "Wipe the counters"
+        assert payload["frequency"] == "daily"
+        assert payload["category"] == "chore"
+        {:ok, %{"id" => UUID.uuid4(), "title" => "Wipe the counters"}}
+      end)
+
+      assert :ok =
+               BotArmyChore.Handlers.TaskHandler.handle_create(%{
+                 "title" => "Wipe the counters",
+                 "category" => "chore",
+                 "frequency" => "daily"
+               })
+    end
+
+    test "completes the chore with no payload key" do
+      expect(BotArmyChore.TaskStoreMock, :complete, fn id ->
+        assert id == "abc"
+        {:ok, %{"id" => "abc", "title" => "Dishes", "frequency" => "once"}}
+      end)
+
+      assert :ok = BotArmyChore.Handlers.TaskHandler.handle_complete(%{"task_id" => "abc"})
+    end
+
+    test "a press with nowhere to answer still does the work" do
+      # The discord check-in's shape: the chore is created, no answer is owed, and a missing
+      # broker must not turn a stored chore into a crash.
+      assert :ok =
+               BotArmyChore.Handlers.TaskHandler.handle_create(
+                 %{"title" => "Tidy the table", "category" => "chore", "frequency" => "once"},
+                 nil
+               )
+    end
+  end
+
   describe "handle_assign/1" do
     test "successfully assigns a chore task" do
       message = valid_assign_message()

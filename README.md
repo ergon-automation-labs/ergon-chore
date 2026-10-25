@@ -52,6 +52,17 @@ The reminder loop (`BotArmyChore.Scheduler`) reads the same store and counts onl
 still open and at least one day past due; a completed chore keeps its `due_date` and is never
 reminded about again.
 
+### A chore written down without a day is on the list today
+
+`chore.task.create` does not require `due_date`, and it no longer leaves it empty: a chore created
+without one is dated **the day it was written**. `frequency` says how often a chore comes back, not
+when it first counts — "every week" added on Sunday is due today and again next week, not due next
+Sunday — and a row with no `due_date` never satisfies the reminder loop's `open_and_dated?/1`, so
+such a chore sat on the card while the loop that is supposed to speak about it had nothing to say
+about it, forever. A day the caller *did* send is kept exactly as sent, including one in the past:
+the bot does not know better than the person who wrote it down, and `due_date: nil` or `""` means
+the same as leaving it out.
+
 ## Message Schemas
 
 Schemas are defined in `bot_army_schemas_chore` and deployed to `/etc/bot_army/schemas/chore/`

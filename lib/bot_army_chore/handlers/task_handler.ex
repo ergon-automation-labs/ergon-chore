@@ -24,10 +24,12 @@ defmodule BotArmyChore.Handlers.TaskHandler do
 
     # Stamp context into payload
     stamped_payload =
-      Map.merge(payload, %{
+      payload
+      |> Map.merge(%{
         "tenant_id" => tenant_id,
         "user_id" => user_id
       })
+      |> stamp_due_day()
 
     case validate_create_payload(stamped_payload) do
       :ok ->
@@ -248,6 +250,27 @@ defmodule BotArmyChore.Handlers.TaskHandler do
       BotArmyLibraryRuntime.NATS.Reply.error(sentence, code)
     )
   end
+
+  # A chore written down without a day is on the list **today**.
+  #
+  # `frequency` says how often a chore comes back; it is not a deferral, and reading it as
+  # one hid every chore the panel creates from the bot's own reminder loop. A row with no
+  # `due_date` never satisfies `open_and_dated?/1` in `BotArmyChore.Scheduler`, so the chore
+  # sat on the card while the loop that is supposed to speak about it had nothing to speak
+  # about — "every week" added on Sunday is due today and again next week, not due next
+  # Sunday. A day the caller did send is kept exactly as sent, including one in the past:
+  # the bot does not know better than the person who wrote it down.
+  defp stamp_due_day(payload) when is_map(payload) do
+    case Map.get(payload, "due_date") do
+      date when is_binary(date) ->
+        if String.trim(date) == "", do: Map.put(payload, "due_date", today()), else: payload
+
+      _ ->
+        Map.put(payload, "due_date", today())
+    end
+  end
+
+  defp today, do: Date.utc_today() |> Date.to_iso8601()
 
   defp validate_create_payload(payload) when is_map(payload) do
     with :ok <- require_field(payload, "title"),

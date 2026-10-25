@@ -66,6 +66,34 @@ defmodule BotArmyChore.Handlers.TaskHandlerTest do
       assert :ok = BotArmyChore.Handlers.TaskHandler.handle_create(message)
     end
 
+    test "a chore written down without a day is on the list today" do
+      # The reminder loop only speaks about a chore that has a day (`open_and_dated?/1`),
+      # so a row created without one was silent forever: on the card, invisible to the
+      # tiers. The day is the bot's, the cadence is hers.
+      assert_created_due_date(valid_create_message(), Date.to_iso8601(Date.utc_today()))
+    end
+
+    test "a nil or blank day is the same as no day at all" do
+      for blank <- [nil, "", "   "] do
+        message = valid_create_message() |> put_in(["payload", "due_date"], blank)
+        assert_created_due_date(message, Date.to_iso8601(Date.utc_today()))
+      end
+    end
+
+    test "a day she did give is kept exactly as she said it, past or future" do
+      for day <- ["2026-12-01", "2026-10-01"] do
+        message = valid_create_message() |> put_in(["payload", "due_date"], day)
+        assert_created_due_date(message, day)
+      end
+    end
+
+    test "every cadence gets the day it was written on, because a cadence is not a deferral" do
+      for frequency <- ["once", "daily", "weekly", "monthly", "yearly"] do
+        message = valid_create_message() |> put_in(["payload", "frequency"], frequency)
+        assert_created_due_date(message, Date.to_iso8601(Date.utc_today()))
+      end
+    end
+
     test "accepts various task titles" do
       for title <- ["Wash dishes", "Vacuum living room", "Do laundry", "Clean bathroom"] do
         message = valid_create_message() |> put_in(["payload", "title"], title)
@@ -237,6 +265,21 @@ defmodule BotArmyChore.Handlers.TaskHandlerTest do
   end
 
   # Helper functions
+
+  # The payload the store was actually asked to persist — the derived day has to reach the
+  # row, not just the reply the caller sees.
+  defp assert_created_due_date(message, expected) do
+    parent = self()
+
+    expect(BotArmyChore.TaskStoreMock, :create, fn payload ->
+      send(parent, {:created, payload})
+      {:ok, %{"id" => UUID.uuid4(), "title" => payload["title"]}}
+    end)
+
+    assert :ok = BotArmyChore.Handlers.TaskHandler.handle_create(message)
+    assert_received {:created, payload}
+    assert payload["due_date"] == expected
+  end
 
   defp valid_create_message do
     %{

@@ -34,6 +34,11 @@ defmodule BotArmyChore.NATS.Consumer do
     %{subject: "chore.task.assign", type: :subscribe, description: "Assign chore"},
     %{subject: "chore.task.complete", type: :subscribe, description: "Complete chore"},
     %{subject: "chore.schedule.list", type: :request_reply, description: "List chore schedule"},
+    %{
+      subject: "chore.task.list",
+      type: :request_reply,
+      description: "List the open chores, due first"
+    },
     %{subject: "chore.assignment.rotate", type: :subscribe, description: "Rotate assignments"},
     %{subject: "chore.assignment.list", type: :request_reply, description: "List assignments"},
     %{
@@ -98,7 +103,9 @@ defmodule BotArmyChore.NATS.Consumer do
 
       {:error, reason} ->
         next_attempt = state.reconnect_attempt + 1
-        delay = BotArmyLibraryRuntime.NATS.Connection.calculate_backoff(state.reconnect_attempt, 1000)
+
+        delay =
+          BotArmyLibraryRuntime.NATS.Connection.calculate_backoff(state.reconnect_attempt, 1000)
 
         Logger.warning(
           "Failed to get NATS connection: #{inspect(reason)}, retrying in #{delay}ms (attempt #{next_attempt})"
@@ -195,6 +202,7 @@ defmodule BotArmyChore.NATS.Consumer do
       "chore.task.assign" -> BotArmyChore.Handlers.TaskHandler.handle_assign(message)
       "chore.task.complete" -> BotArmyChore.Handlers.TaskHandler.handle_complete(message)
       "chore.schedule.list" -> handle_schedule_list(nats_msg)
+      "chore.task.list" -> handle_task_list(nats_msg)
       "chore.assignment.rotate" -> BotArmyChore.Handlers.TaskHandler.handle_rotate(message)
       "chore.assignment.list" -> handle_assignment_list(nats_msg)
       "discord.check_in.response" -> handle_check_in_response(message)
@@ -236,60 +244,116 @@ defmodule BotArmyChore.NATS.Consumer do
     end
   end
 
+  # A schedule read is the overdue-recurring half: what the reminder loop believes is
+  # late. It is deliberately not the list a household works from — "overdue" is a judgement
+  # about a chore, and a door that opened on it would be opening on an accusation. The list
+  # a card draws is `chore.task.list` below.
   defp handle_schedule_list(nats_msg) do
-    if nats_msg.reply_to do
+    reply(nats_msg, fn ->
       tenant_id = BotArmyLibraryCore.Tenant.default_tenant_id()
-      tasks = BotArmyChore.TaskStore.list_overdue_recurring(tenant_id)
 
-      task_list =
-        Enum.map(tasks, fn t ->
-          %{
-            "id" => t["id"],
-            "title" => t["title"],
-            "frequency" => t["frequency"],
-            "next_due_at" => t["next_due_at"],
-            "assigned_to" => t["assigned_to"]
-          }
-        end)
-
-      response = %{
-        "tasks" => task_list
-      }
-
-      case GenServer.call(BotArmyLibraryRuntime.NATS.Connection, :get_connection, 5_000) do
-        {:ok, conn} ->
-          Gnat.pub(conn, nats_msg.reply_to, Jason.encode!(response))
-          Logger.debug("Published schedule list response")
-
-        {:error, reason} ->
-          Logger.warning("Failed to publish schedule list: #{inspect(reason)}")
-      end
-    end
+      %{"tasks" => BotArmyChore.TaskStore.list_overdue_recurring(tenant_id)}
+    end)
   end
 
+  # The open chores, due first. This is the one read the household's checklist card is built
+  # on, and it answers with an `error` key rather than an empty list when the store could not
+  # be read: "there is nothing to do" and "I could not find out" are different answers, and a
+  # card that drew the second as the first would be telling her the house is clear when nobody
+  # looked.
+  #
+  # Ordering is a decision, not a preference: `due_date` first (undated last, because a chore
+  # with no day is not more urgent than one due today), then oldest first, so the list does not
+  # reshuffle itself between two reads of the same chores.
+  defp handle_task_list(nats_msg) do
+    reply(nats_msg, fn ->
+      tenant_id = BotArmyLibraryCore.Tenant.default_tenant_id()
+
+      case task_store().list(tenant_id) do
+        {:ok, tasks} ->
+          %{"chores" => chore_summaries(tasks)}
+
+        {:error, reason} ->
+          %{"chores" => [], "error" => "read_failed", "detail" => inspect(reason)}
+      end
+    end)
+  end
+
+  @doc """
+  The wire shape of one chore in a `chore.task.list` answer, ordered as the card draws them.
+
+  Public so the shape can be tested without a broker or a database: what the page parses is
+  this function's output, and a shape only exercised through a live store is a shape nobody
+  can pin.
+  """
+  @spec chore_summaries([map()]) :: [map()]
+  def chore_summaries(tasks) when is_list(tasks) do
+    tasks
+    |> Enum.filter(&is_map/1)
+    |> Enum.sort_by(fn task ->
+      {task["due_date"] == nil, task["due_date"] || "", task["created_at"] || ""}
+    end)
+    |> Enum.map(fn task ->
+      %{
+        "id" => task["id"],
+        "title" => task["title"],
+        "category" => task["category"],
+        "frequency" => task["frequency"],
+        "status" => task["status"],
+        "due_date" => task["due_date"],
+        "location" => task["location"],
+        "assigned_to" => task["assigned_to"]
+      }
+    end)
+  end
+
+  # Who has which chores. This read used to call `TaskStore.list/0`, an arity the store has
+  # never had, so every request crashed the consumer — and because the supervisor restarted it
+  # onto the same shared connection, the bot looked healthy while the subject answered nothing.
   defp handle_assignment_list(nats_msg) do
-    if nats_msg.reply_to do
-      {:ok, tasks} = BotArmyChore.TaskStore.list()
+    reply(nats_msg, fn ->
+      tenant_id = BotArmyLibraryCore.Tenant.default_tenant_id()
       members = Application.get_env(:bot_army_chore, :household_members, [])
 
-      assignments =
-        Enum.reduce(members, %{}, fn member, acc ->
-          member_tasks = Enum.filter(tasks, &(&1["assigned_to"] == member))
-          Map.put(acc, member, member_tasks)
-        end)
+      case task_store().list(tenant_id) do
+        {:ok, tasks} ->
+          assignments =
+            Enum.reduce(members, %{}, fn member, acc ->
+              member_tasks = Enum.filter(tasks, &(&1["assigned_to"] == member))
+              Map.put(acc, member, member_tasks)
+            end)
 
-      response = %{
-        "assignments" => assignments
-      }
-
-      case GenServer.call(BotArmyLibraryRuntime.NATS.Connection, :get_connection, 5_000) do
-        {:ok, conn} ->
-          Gnat.pub(conn, nats_msg.reply_to, Jason.encode!(response))
-          Logger.debug("Published assignment list response")
+          %{"assignments" => assignments}
 
         {:error, reason} ->
-          Logger.warning("Failed to publish assignment list: #{inspect(reason)}")
+          %{"assignments" => %{}, "error" => "read_failed", "detail" => inspect(reason)}
       end
+    end)
+  end
+
+  # One way to answer a request, so the three reads cannot drift into three different
+  # failure modes. A read that raises is answered as a failure, never as an empty list.
+  defp reply(%{reply_to: reply_to} = nats_msg, build) when is_binary(reply_to) do
+    body =
+      try do
+        build.()
+      rescue
+        e ->
+          Logger.error("Failed to build #{nats_msg.topic || "request"} answer: #{inspect(e)}")
+          %{"error" => "read_failed", "detail" => inspect(e)}
+      end
+
+    case GenServer.call(BotArmyLibraryRuntime.NATS.Connection, :get_connection, 5_000) do
+      {:ok, conn} ->
+        Gnat.pub(conn, reply_to, Jason.encode!(body))
+        Logger.debug("Published #{reply_to} answer")
+
+      {:error, reason} ->
+        Logger.warning("Failed to publish #{reply_to} answer: #{inspect(reason)}")
     end
   end
+
+  defp reply(_nats_msg, _build), do: :ok
+
+  defp task_store, do: Application.get_env(:bot_army_chore, :task_store, BotArmyChore.TaskStore)
 end

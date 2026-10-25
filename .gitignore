@@ -25,3 +25,7 @@ mix.lock
 *.tar.xz
 _build_cursor_test/
 .push-validated
+
+# written by the pre-push hook; never committed
+.version_for_pre_push
+.compile-hash

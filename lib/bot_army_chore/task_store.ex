@@ -155,28 +155,77 @@ defmodule BotArmyChore.TaskStore do
 
   # Callbacks
 
+  # The store's whole state is read once, at boot — and `BotArmyChore.Repo` is started in the
+  # same supervisor while Postgrex connects to its pool in the background, so a read from
+  # `init` races the first connection.
+  #
+  # Measured 2026-11-02: chore booted a few hundred milliseconds ahead of its pool, the rescue
+  # below turned that race into `%{}`, and the bot then served an empty house — for as long as
+  # it ran, because nothing ever re-read. Both reads a surface makes (`chore.task.list`,
+  # `chore.schedule.list`) filter that state, so "the database was not up yet" was answered as
+  # "there is nothing to do" — the same lie as a card that draws an unreadable list as an empty
+  # one, just committed at boot instead of at read time. Her thirteen chores were in Postgres
+  # the whole time.
+  #
+  # So: wait for the database rather than guessing about it, and if it never arrives, stop and
+  # let the supervisor try again. An empty state is only allowed when a read succeeded.
+  @load_attempts 15
+  @load_retry_ms 2_000
+
   @impl true
   def init(_opts) do
     Logger.info("TaskStore started")
-    # Load all tasks from database into GenServer state
-    # Gracefully handle database unavailability (e.g., in tests)
-    state =
-      try do
-        tasks = BotArmyChore.Repo.all(BotArmyChore.Schemas.Task)
 
-        Enum.reduce(tasks, %{}, fn task, acc ->
-          Map.put(acc, task.id |> to_string(), schema_to_map(task))
-        end)
-      rescue
-        _ ->
-          Logger.warning(
-            "Could not load tasks from database (database unavailable). Starting with empty state."
-          )
+    case load_tasks(@load_attempts) do
+      {:ok, state} ->
+        {:ok, state}
 
-          %{}
-      end
+      {:error, reason} ->
+        Logger.error("TaskStore could not read its tasks (#{inspect(reason)}); restarting")
+        {:stop, {:database_unavailable, reason}}
+    end
+  end
 
-    {:ok, state}
+  @doc false
+  # `loader`/`sleep_fun` are injectable so the race itself can be pinned in a test without a
+  # database: what must hold is that a failing read is retried and that running out of
+  # attempts is an error, never an empty result.
+  def load_tasks(
+        attempts_left,
+        loader \\ &read_all_tasks/0,
+        sleep_fun \\ &Process.sleep/1
+      )
+
+  def load_tasks(1, loader, _sleep_fun) do
+    case loader.() do
+      {:ok, tasks} -> {:ok, to_state(tasks)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  def load_tasks(attempts_left, loader, sleep_fun) do
+    case loader.() do
+      {:ok, tasks} ->
+        {:ok, to_state(tasks)}
+
+      {:error, reason} ->
+        Logger.warning(
+          "TaskStore could not read its tasks yet (#{inspect(reason)}); retrying in #{@load_retry_ms} ms"
+        )
+
+        sleep_fun.(@load_retry_ms)
+        load_tasks(attempts_left - 1, loader, sleep_fun)
+    end
+  end
+
+  defp read_all_tasks do
+    {:ok, BotArmyChore.Repo.all(BotArmyChore.Schemas.Task)}
+  rescue
+    error -> {:error, error}
+  end
+
+  defp to_state(tasks) do
+    Map.new(tasks, fn task -> {to_string(task.id), schema_to_map(task)} end)
   end
 
   @impl true

@@ -62,3 +62,29 @@ defmodule BotArmyChore.TaskStoreLoadTest do
     assert {:ok, %{}} = TaskStore.load_tasks(3, fn -> {:ok, []} end, fn _ -> :ok end)
   end
 end
+
+defmodule BotArmyChore.ApplicationOrderTest do
+  use ExUnit.Case, async: true
+  @moduletag :core
+
+  alias BotArmyChore.Application
+
+  # The store reads its state in `init`, so it must start *after* the repo that
+  # answers it. The children pipeline prepends, which put it before.
+  test "the repo starts before the store that reads from it" do
+    children = [
+      {:outcome_tracker, []},
+      {BotArmyChore.TaskStore, []},
+      :some_consumer,
+      BotArmyChore.Repo
+    ]
+
+    assert [BotArmyChore.Repo, {BotArmyChore.TaskStore, []}, {:outcome_tracker, []}, :some_consumer] =
+             Application.storage_first(children)
+  end
+
+  test "storage children keep their relative order when there are no others" do
+    assert [BotArmyChore.Repo, {BotArmyChore.TaskStore, []}] ==
+             Application.storage_first([{BotArmyChore.TaskStore, []}, BotArmyChore.Repo])
+  end
+end

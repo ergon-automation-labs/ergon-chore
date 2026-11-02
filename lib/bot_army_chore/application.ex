@@ -24,9 +24,27 @@ defmodule BotArmyChore.Application do
       |> maybe_add_veto_listener()
       |> maybe_add_consumer()
       |> maybe_add_outcome_tracker()
+      |> storage_first()
 
     opts = [strategy: :one_for_one, name: BotArmyChore.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  # Each `maybe_add_*` prepends, so the pipeline above yields its children in
+  # reverse order and storage ended up *last*: the store started before the repo
+  # that answers it. Every boot then read nothing (there was no pool yet), and
+  # the old rescue turned that into a permanently empty store — thirteen chores
+  # in Postgres, answered as an empty house (measured on mini 2026-11-02).
+  @doc false
+  def storage_first(children) do
+    {storage, others} =
+      Enum.split_with(children, fn
+        BotArmyChore.Repo -> true
+        {BotArmyChore.TaskStore, _} -> true
+        _ -> false
+      end)
+
+    Enum.reverse(storage) ++ others
   end
 
   defp maybe_add_repo(children) do
@@ -100,7 +118,8 @@ defmodule BotArmyChore.Application do
     if @env == :test,
       do: children,
       else: [
-        {BotArmyLibraryLearning.OutcomeTracker, [repo: BotArmyChore.Repo, name: :chore_outcome_tracker]}
+        {BotArmyLibraryLearning.OutcomeTracker,
+         [repo: BotArmyChore.Repo, name: :chore_outcome_tracker]}
         | children
       ]
   end

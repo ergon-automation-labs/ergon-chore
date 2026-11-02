@@ -166,12 +166,14 @@ defmodule BotArmyChore.Habits do
   def ago(1), do: "yesterday"
   def ago(days), do: "#{days} days ago"
 
-  # Whole days, floored toward zero. `nil` when there is no instant to compare — a chore
-  # that has never come due has no answer, and zero would be a lie.
+  # Whole days elapsed, floored — so seven days and fourteen hours ago is "7 days
+  # ago", not 8, and a chore overdue by nineteen hours is -1, not 0. `nil` when there
+  # is no instant to compare: a chore that never came due has no answer, and zero
+  # would be a lie.
   defp days_since(nil, _now), do: nil
 
   defp days_since(at, now),
-    do: at |> as_datetime() |> maybe_diff(now, -1)
+    do: at |> as_datetime() |> then(&maybe_diff(now, &1, 1))
 
   defp days_until(nil, _now), do: nil
 
@@ -180,8 +182,11 @@ defmodule BotArmyChore.Habits do
 
   defp maybe_diff(nil, _now, _sign), do: nil
 
+  # Floored, not truncated: `trunc` rounds toward zero, so a chore that came due
+  # nineteen hours ago read `due_in_days: 0` — "due today" for something already
+  # overdue. Floor keeps the sign honest: negative is always overdue.
   defp maybe_diff(at, now, sign),
-    do: trunc(DateTime.diff(at, now, :second) / 86_400) * sign
+    do: Integer.floor_div(DateTime.diff(at, now, :second), 86_400) * sign
 
   @doc false
   # The store hands dates in three shapes: a `DateTime`, an ISO 8601 string with an

@@ -145,6 +145,18 @@ defmodule BotArmyChore.HabitsTest do
 
       assert habit.due_in_days == 3
     end
+
+    test "a chore that fell due hours ago is overdue, not due today" do
+      # nineteen hours overdue: truncating toward zero called that "due today"
+      [habit] =
+        Habits.derive(
+          [chore(%{"next_due_at" => "2026-11-01T17:00:00Z"})],
+          [],
+          @now
+        )
+
+      assert habit.due_in_days == -1
+    end
   end
 
   describe "date shapes the store actually hands over" do

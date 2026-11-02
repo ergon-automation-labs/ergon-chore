@@ -71,6 +71,38 @@ defmodule BotArmyChore.TaskStore do
   end
 
   @doc """
+  Put a chore away — "I stopped doing this one".
+
+  The row is marked, never destroyed: the id, the schedule and the completion history stay,
+  so `restore/1` brings back the chore that was put away rather than a lookalike with a new
+  id and no past. Every read filters the mark.
+  """
+  @impl BotArmyChore.TaskStoreBehaviour
+  def archive(task_id) when is_binary(task_id) do
+    GenServer.call(@server, {:archive, task_id})
+  end
+
+  @doc """
+  Take a chore back out of the drawer. Clears the mark; changes nothing else.
+  """
+  @impl BotArmyChore.TaskStoreBehaviour
+  def restore(task_id) when is_binary(task_id) do
+    GenServer.call(@server, {:restore, task_id})
+  end
+
+  @doc """
+  Undo a completion: takes back the last recorded occasion and the schedule it displaced.
+
+  Answers `{:error, :no_completion}` when there is nothing to undo — a press that reports
+  success without having changed anything is the same lie as one that reports failure after
+  doing the work.
+  """
+  @impl BotArmyChore.TaskStoreBehaviour
+  def uncomplete(task_id) when is_binary(task_id) do
+    GenServer.call(@server, {:uncomplete, task_id})
+  end
+
+  @doc """
   Retrieve a task by ID, scoped to a tenant.
 
   Returns `{:ok, task}` or `{:error, :not_found}`.
@@ -394,9 +426,23 @@ defmodule BotArmyChore.TaskStore do
       nil ->
         {:reply, {:error, :not_found}, state}
 
-      _task ->
+      task ->
         task_uuid = Ecto.UUID.cast!(task_id)
         completed_at = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
+
+        # Captured before the row moves: this is the schedule the press displaces, and the
+        # undo has no other way to know it.
+        next_due_before =
+          case task["next_due_at"] do
+            nil ->
+              nil
+
+            iso ->
+              case DateTime.from_iso8601(iso) do
+                {:ok, dt, _} -> dt
+                _ -> nil
+              end
+          end
 
         # The completion and the row that records *this occasion* are one transaction. The
         # task's own `completed_at` is overwritten on the next completion, so on its own it
@@ -426,6 +472,7 @@ defmodule BotArmyChore.TaskStore do
                           %{
                             task_id: updated.id,
                             completed_at: DateTime.from_naive!(completed_at, "Etc/UTC"),
+                            next_due_at_before: next_due_before,
                             tenant_id: updated.tenant_id,
                             user_id: updated.user_id
                           }
@@ -455,6 +502,46 @@ defmodule BotArmyChore.TaskStore do
   end
 
   @impl true
+  def handle_call({:archive, task_id}, _from, state) do
+    case Map.get(state, task_id) do
+      nil ->
+        {:reply, {:error, :not_found}, state}
+
+      %{"archived_at" => archived} when not is_nil(archived) ->
+        # Already in the drawer. Saying so twice is not a second failure.
+        {:reply, {:ok, Map.get(state, task_id)}, state}
+
+      _task ->
+        write_mark(state, task_id, %{"archived_at" => DateTime.utc_now()})
+    end
+  end
+
+  @impl true
+  def handle_call({:restore, task_id}, _from, state) do
+    case Map.get(state, task_id) do
+      nil ->
+        {:reply, {:error, :not_found}, state}
+
+      %{"archived_at" => nil} ->
+        {:reply, {:ok, Map.get(state, task_id)}, state}
+
+      _task ->
+        write_mark(state, task_id, %{"archived_at" => nil})
+    end
+  end
+
+  @impl true
+  def handle_call({:uncomplete, task_id}, _from, state) do
+    case Map.get(state, task_id) do
+      nil ->
+        {:reply, {:error, :not_found}, state}
+
+      task ->
+        undo_completion(task, task_id, state)
+    end
+  end
+
+  @impl true
   def handle_call({:get, tenant_id, task_id}, _from, state) do
     case Map.get(state, task_id) do
       nil ->
@@ -475,7 +562,8 @@ defmodule BotArmyChore.TaskStore do
       state
       |> Map.values()
       |> Enum.filter(fn t ->
-        t["tenant_id"] == tenant_id && t["status"] in ["pending", "in_progress"]
+        t["tenant_id"] == tenant_id && t["status"] in ["pending", "in_progress"] &&
+          is_nil(t["archived_at"])
       end)
 
     {:reply, {:ok, tasks}, state}
@@ -486,7 +574,7 @@ defmodule BotArmyChore.TaskStore do
     tasks =
       state
       |> Map.values()
-      |> Enum.filter(fn t -> t["tenant_id"] == tenant_id end)
+      |> Enum.filter(fn t -> t["tenant_id"] == tenant_id && is_nil(t["archived_at"]) end)
 
     {:reply, {:ok, tasks}, state}
   end
@@ -525,6 +613,7 @@ defmodule BotArmyChore.TaskStore do
       |> Map.values()
       |> Enum.filter(fn t ->
         t["tenant_id"] == tenant_id &&
+          is_nil(t["archived_at"]) &&
           t["frequency"] != "once" &&
           t["next_due_at"] != nil &&
           case DateTime.from_iso8601(t["next_due_at"]) do
@@ -623,6 +712,109 @@ defmodule BotArmyChore.TaskStore do
   end
 
   # Helper function to convert Ecto schema to map for GenServer state
+  # Both marks are written the same way: one transaction, one changeset, and the in-memory
+  # map is only replaced with what the database actually stored.
+  defp write_mark(state, task_id, attrs) do
+    task_uuid = Ecto.UUID.cast!(task_id)
+
+    case BotArmyChore.Repo.transaction(fn ->
+           case BotArmyChore.Repo.get(BotArmyChore.Schemas.Task, task_uuid) do
+             nil ->
+               BotArmyChore.Repo.rollback(:not_found)
+
+             db_task ->
+               case BotArmyChore.Schemas.Task.changeset(db_task, attrs)
+                    |> BotArmyChore.Repo.update() do
+                 {:ok, updated} -> updated
+                 {:error, changeset} -> BotArmyChore.Repo.rollback(changeset)
+               end
+           end
+         end) do
+      {:ok, updated} ->
+        task = schema_to_map(updated)
+        {:reply, {:ok, task}, Map.put(state, task_id, task)}
+
+      {:error, :not_found} ->
+        {:reply, {:error, :not_found}, state}
+
+      {:error, changeset} ->
+        Logger.error("Failed to write chore mark: #{inspect(changeset)}")
+        {:reply, {:error, :database_error}, state}
+    end
+  end
+
+  # Undoing a completion is deleting *that occasion* and putting the schedule back where it
+  # was, in one transaction. Two things are deliberately not recomputed from the cadence:
+  # `next_due_at` comes from the completion row (what it displaced), and `status` comes from
+  # the task's own shape — a one-off goes back to pending, a recurring chore goes back to the
+  # completed-but-due state it lives in between occasions.
+  defp undo_completion(task, task_id, state) do
+    import Ecto.Query
+
+    task_uuid = Ecto.UUID.cast!(task_id)
+
+    result =
+      BotArmyChore.Repo.transaction(fn ->
+        last =
+          BotArmyChore.Repo.one(
+            from(c in BotArmyChore.Schemas.ChoreCompletion,
+              where: c.task_id == ^task_uuid,
+              order_by: [desc: c.completed_at, desc: c.inserted_at],
+              limit: 1
+            )
+          )
+
+        if is_nil(last), do: BotArmyChore.Repo.rollback(:no_completion)
+
+        case BotArmyChore.Repo.delete(last) do
+          {:ok, _} -> :ok
+          {:error, changeset} -> BotArmyChore.Repo.rollback(changeset)
+        end
+
+        previous =
+          BotArmyChore.Repo.one(
+            from(c in BotArmyChore.Schemas.ChoreCompletion,
+              where: c.task_id == ^task_uuid,
+              order_by: [desc: c.completed_at],
+              limit: 1
+            )
+          )
+
+        db_task = BotArmyChore.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
+
+        if is_nil(db_task), do: BotArmyChore.Repo.rollback(:not_found)
+
+        attrs = %{
+          "status" => if(task["frequency"] == "once", do: "pending", else: "completed"),
+          "completed_at" => previous && DateTime.to_naive(previous.completed_at),
+          "next_due_at" => last.next_due_at_before
+        }
+
+        case BotArmyChore.Schemas.Task.changeset(db_task, attrs)
+             |> BotArmyChore.Repo.update() do
+          {:ok, updated} -> updated
+          {:error, changeset} -> BotArmyChore.Repo.rollback(changeset)
+        end
+      end)
+
+    case result do
+      {:ok, updated} ->
+        undone = schema_to_map(updated)
+        Logger.info("Undid a chore completion: #{task_id}")
+        {:reply, {:ok, undone}, Map.put(state, task_id, undone)}
+
+      {:error, :no_completion} ->
+        {:reply, {:error, :no_completion}, state}
+
+      {:error, :not_found} ->
+        {:reply, {:error, :not_found}, state}
+
+      {:error, changeset} ->
+        Logger.error("Failed to undo chore completion: #{inspect(changeset)}")
+        {:reply, {:error, :database_error}, state}
+    end
+  end
+
   defp schema_to_map(%BotArmyChore.Schemas.Task{} = task) do
     %{
       "id" => Ecto.UUID.cast!(task.id) |> to_string(),
@@ -648,6 +840,8 @@ defmodule BotArmyChore.TaskStore do
       "notification_level" => task.notification_level || 0,
       "last_notified_at" =>
         if(task.last_notified_at, do: task.last_notified_at |> DateTime.to_iso8601(), else: nil),
+      "archived_at" =>
+        if(task.archived_at, do: task.archived_at |> DateTime.to_iso8601(), else: nil),
       "created_at" => task.inserted_at |> BotArmyLibraryRuntime.Timestamp.utc_iso8601(),
       "updated_at" => task.updated_at |> BotArmyLibraryRuntime.Timestamp.utc_iso8601()
     }

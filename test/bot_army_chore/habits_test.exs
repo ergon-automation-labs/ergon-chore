@@ -177,4 +177,22 @@ defmodule BotArmyChore.HabitsTest do
     assert Habits.ago(1) == "yesterday"
     assert Habits.ago(8) == "8 days ago"
   end
+
+  test "a chore she has put away is not a habit, and is not counted as one" do
+    # `archived_at` is the mark the "stopped doing this" press leaves. It is checked here as
+    # well as `status` because the mark is what the store filters on — a habit drawn from a
+    # drawer would tell her she still does something she has stopped doing.
+    archived =
+      chore(%{
+        "id" => "archived",
+        "title" => "Take out the recycling",
+        "archived_at" => "2026-10-01T00:00:00Z"
+      })
+
+    habits =
+      Habits.derive([archived, chore(%{"id" => "live", "title" => "Water the plants"})], [], @now)
+
+    assert Enum.map(habits, & &1.title) == ["Water the plants"]
+  end
+
 end

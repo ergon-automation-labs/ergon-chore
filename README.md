@@ -36,6 +36,18 @@ iex -S mix
   stored row, or `{"ok": false, "error": …}` in words.
 - `chore.task.complete` (request/reply) — one press, `{"task_id": ...}`, answering the completed
   row or `code: "not_found"`.
+- `chore.task.uncomplete` (request/reply) — the undo for a press that was a mistake. Deletes the
+  **latest** recorded occasion and restores the `next_due_at` that completion displaced (stored
+  on the completion row as `next_due_at_before`; recomputing from the cadence would move a weekly
+  chore to "tonight + 7" and make the undo a different schedule). Answers the row, or
+  `code: "no_completion"` when there is nothing to take back — a press that reports success after
+  changing nothing is the same lie as one that reports failure after doing the work.
+- `chore.task.archive` (request/reply) — "I stopped doing this one". Sets `archived_at`; the row
+  keeps its id, its schedule and its completion history, and every read filters the mark, so the
+  chore leaves the card and the habit list without anything being destroyed.
+- `chore.task.restore` (request/reply) — clears the mark. Because the row was never deleted, what
+  comes back is the *same* chore: same id, same history, same schedule. Archive/restore is the
+  pair a door draws as one line ("Put away · Undo"), not a delete behind a confirmation.
 
 The three verbs a door asks are the fleet's `Reply` envelope (`BotArmyLibraryRuntime.NATS.Reply`),
 the same shape `fitness.set.list` answers with, so a surface that draws one list can draw this

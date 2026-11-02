@@ -24,6 +24,7 @@ defmodule BotArmyChore.Schemas.Task do
     field :last_notified_at, :utc_datetime_usec
     field :tenant_id, :binary_id
     field :user_id, :binary_id
+    field :archived_at, :utc_datetime_usec
 
     timestamps()
   end
@@ -31,7 +32,7 @@ defmodule BotArmyChore.Schemas.Task do
   @doc false
   def changeset(task, attrs) do
     task
-    |> cast(attrs, [:title, :category, :frequency, :assigned_to, :priority, :due_date, :status, :location, :completed_at, :next_due_at, :last_completed_at, :notification_level, :last_notified_at, :tenant_id, :user_id])
+    |> cast(attrs, [:title, :category, :frequency, :assigned_to, :priority, :due_date, :status, :location, :completed_at, :next_due_at, :last_completed_at, :notification_level, :last_notified_at, :tenant_id, :user_id, :archived_at])
     |> validate_required([:title, :category, :tenant_id])
     |> validate_inclusion(:status, ["pending", "in_progress", "completed", "archived"])
     |> validate_inclusion(:priority, ["low", "normal", "high"])

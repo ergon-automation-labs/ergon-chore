@@ -18,13 +18,18 @@ defmodule BotArmyChore.Schemas.ChoreCompletion do
     field(:tenant_id, :binary_id)
     field(:user_id, :binary_id)
 
+    # What this completion displaced. Undoing the press restores *this* date rather than
+    # recomputing one from the cadence, which would move a weekly chore to "tonight + 7"
+    # and quietly make the undo a different schedule.
+    field(:next_due_at_before, :utc_datetime_usec)
+
     timestamps(type: :utc_datetime_usec)
   end
 
   @doc false
   def changeset(completion, attrs) do
     completion
-    |> cast(attrs, [:task_id, :completed_at, :tenant_id, :user_id])
+    |> cast(attrs, [:task_id, :completed_at, :tenant_id, :user_id, :next_due_at_before])
     |> validate_required([:task_id, :completed_at, :tenant_id])
   end
 end

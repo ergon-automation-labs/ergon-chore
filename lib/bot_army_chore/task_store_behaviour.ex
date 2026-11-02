@@ -7,6 +7,9 @@ defmodule BotArmyChore.TaskStoreBehaviour do
   @callback update(binary, map) :: {:ok, map} | {:error, term}
   @callback start(binary) :: {:ok, map} | {:error, term}
   @callback complete(binary) :: {:ok, map} | {:error, term}
+  @callback uncomplete(binary) :: {:ok, map} | {:error, term}
+  @callback archive(binary) :: {:ok, map} | {:error, term}
+  @callback restore(binary) :: {:ok, map} | {:error, term}
   @callback get(binary, binary) :: {:ok, map} | {:error, term}
   @callback list(binary) :: [map]
   @callback list_all(binary) :: [map]

@@ -85,7 +85,8 @@ defmodule BotArmyChore.Habits do
 
   @doc "A chore is a habit when it comes round again and has not been put away."
   def habit?(task) do
-    Map.has_key?(@windows, task["frequency"]) && task["status"] != "archived"
+    Map.has_key?(@windows, task["frequency"]) && task["status"] != "archived" &&
+      is_nil(task["archived_at"])
   end
 
   defp habit(task, rows, now) do

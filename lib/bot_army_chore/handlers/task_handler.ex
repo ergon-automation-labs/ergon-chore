@@ -6,6 +6,9 @@ defmodule BotArmyChore.Handlers.TaskHandler do
   - `chore.task.create` - Create a new chore task
   - `chore.task.assign` - Assign chore to household member
   - `chore.task.complete` - Mark chore as complete
+  - `chore.task.uncomplete` - Take back the last completion, and the schedule it displaced
+  - `chore.task.archive` - Put a chore away ("I stopped doing this one")
+  - `chore.task.restore` - Take a chore back out of the drawer
 
   Each operation validates the input and publishes response events.
   """
@@ -226,6 +229,98 @@ defmodule BotArmyChore.Handlers.TaskHandler do
         answer(reply_to, {:error, "that press did not name a chore", reason})
         Logger.warning("Invalid chore completion payload: #{inspect(reason)}")
         publish_error(event_id, reason, "Invalid completion data", tenant_id, user_id)
+    end
+  end
+
+  @doc """
+  Put a chore away — "I stopped doing this one".
+
+  The row is marked, not deleted, so the same chore can come back with its own id and its
+  own history. The reply carries the marked row, which is how a caller can draw an undo
+  line without having to remember what it sent.
+  """
+  def handle_archive(message, reply_to \\ nil) do
+    with_task_id(message, reply_to, "chore.task.archived", fn task_id, tenant_id, user_id, event_id ->
+      case task_store().archive(task_id) do
+        {:ok, task} ->
+          answer(reply_to, {:ok, %{"chore" => task}})
+          publish_event("chore.task.archived", %{"task_id" => task_id}, event_id, tenant_id, user_id)
+
+        {:error, :not_found} ->
+          answer(reply_to, {:error, "that chore is not on the list", :not_found})
+
+        {:error, reason} ->
+          Logger.warning("Failed to archive chore: #{inspect(reason)}")
+          answer(reply_to, {:error, "the house could not put that chore away", :write_failed})
+      end
+    end)
+  end
+
+  @doc "Take a chore back out of the drawer. Clears the mark; changes nothing else."
+  def handle_restore(message, reply_to \\ nil) do
+    with_task_id(message, reply_to, "chore.task.restored", fn task_id, tenant_id, user_id, event_id ->
+      case task_store().restore(task_id) do
+        {:ok, task} ->
+          answer(reply_to, {:ok, %{"chore" => task}})
+          publish_event("chore.task.restored", %{"task_id" => task_id}, event_id, tenant_id, user_id)
+
+        {:error, :not_found} ->
+          answer(reply_to, {:error, "that chore is not on the list", :not_found})
+
+        {:error, reason} ->
+          Logger.warning("Failed to restore chore: #{inspect(reason)}")
+          answer(reply_to, {:error, "the house could not bring that chore back", :write_failed})
+      end
+    end)
+  end
+
+  @doc """
+  Undo a completion.
+
+  Answers `{:error, :no_completion}` when there is nothing recorded to take back, because a
+  press that reports success without changing anything teaches the caller to distrust it.
+  """
+  def handle_uncomplete(message, reply_to \\ nil) do
+    with_task_id(message, reply_to, "chore.task.uncompleted", fn task_id, tenant_id, user_id, event_id ->
+      case task_store().uncomplete(task_id) do
+        {:ok, task} ->
+          answer(reply_to, {:ok, %{"chore" => task}})
+
+          publish_event(
+            "chore.task.uncompleted",
+            %{"task_id" => task_id},
+            event_id,
+            tenant_id,
+            user_id
+          )
+
+        {:error, :no_completion} ->
+          answer(reply_to, {:error, "there is no completion to take back", :no_completion})
+
+        {:error, :not_found} ->
+          answer(reply_to, {:error, "that chore is not on the list", :not_found})
+
+        {:error, reason} ->
+          Logger.warning("Failed to undo chore completion: #{inspect(reason)}")
+          answer(reply_to, {:error, "the house could not take that back", :write_failed})
+      end
+    end)
+  end
+
+  # One press, one id, one shape of refusal. The three lifecycle writes differ only in which
+  # store call they make and what they say when it works, so the plumbing lives here once.
+  defp with_task_id(message, reply_to, _event, fun) do
+    event_id = message["event_id"]
+    payload = payload_of(message)
+    %{tenant_id: tenant_id, user_id: user_id} = BotArmyLibraryCore.Tenant.extract_context(message)
+
+    case require_field(payload, "task_id") do
+      :ok ->
+        fun.(payload["task_id"], tenant_id, user_id, event_id)
+
+      {:error, reason} ->
+        Logger.warning("Invalid chore lifecycle payload: #{inspect(reason)}")
+        answer(reply_to, {:error, "that press did not name a chore", reason})
     end
   end
 

@@ -33,6 +33,21 @@ defmodule BotArmyChore.NATS.Consumer do
     %{subject: "chore.task.create", type: :request_reply, description: "Create chore task"},
     %{subject: "chore.task.assign", type: :subscribe, description: "Assign chore"},
     %{subject: "chore.task.complete", type: :request_reply, description: "Complete chore"},
+    %{
+      subject: "chore.task.uncomplete",
+      type: :request_reply,
+      description: "Undo the last completion, and the schedule it displaced"
+    },
+    %{
+      subject: "chore.task.archive",
+      type: :request_reply,
+      description: "Put a chore away (stopped doing this one)"
+    },
+    %{
+      subject: "chore.task.restore",
+      type: :request_reply,
+      description: "Take a chore back out of the drawer"
+    },
     %{subject: "chore.schedule.list", type: :request_reply, description: "List chore schedule"},
     %{
       subject: "chore.task.list",
@@ -211,6 +226,15 @@ defmodule BotArmyChore.NATS.Consumer do
 
       "chore.task.complete" ->
         BotArmyChore.Handlers.TaskHandler.handle_complete(message, nats_msg.reply_to)
+
+      "chore.task.uncomplete" ->
+        BotArmyChore.Handlers.TaskHandler.handle_uncomplete(message, nats_msg.reply_to)
+
+      "chore.task.archive" ->
+        BotArmyChore.Handlers.TaskHandler.handle_archive(message, nats_msg.reply_to)
+
+      "chore.task.restore" ->
+        BotArmyChore.Handlers.TaskHandler.handle_restore(message, nats_msg.reply_to)
 
       "chore.schedule.list" ->
         handle_schedule_list(nats_msg)

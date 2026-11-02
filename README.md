@@ -52,6 +52,24 @@ The reminder loop (`BotArmyChore.Scheduler`) reads the same store and counts onl
 still open and at least one day past due; a completed chore keeps its `due_date` and is never
 reminded about again.
 
+- `chore.habit.list` (request/reply) — **derived** habits: one per recurring chore, with
+  `done_in_window`, `expected_in_window`, `last_done`, `days_since_done`, `next_due_at`,
+  `due_in_days` and a `summary` in words ("three of the last four weeks"). There is no habit
+  store and no habit subject of its own — the chore *is* the habit, so a habit cannot exist for
+  something she is not already doing, and there is no second list to maintain.
+  `done_in_window` is `nil` when the history does not support a count (`basis: "last_only"`):
+  `tasks.completed_at` is overwritten on every completion, so before `chore_completions` existed
+  it could say *when* but never *how often*, and a count in its place would be invented.
+
+### A habit is a chore that comes round again
+
+`chore_completions` holds one row per completion, written in the same transaction as the
+completion itself, so the chore's `completed_at` and its history cannot disagree. A habit's window
+comes from the chore's own cadence (weekly → four weeks, daily → one week, monthly → three months,
+yearly → one year), and `summary` is a fact rather than a score: "three of the last four weeks",
+"last done 7 days ago", "not done yet". There is deliberately no streak, no "broken", and no red —
+a missed week is information, and a system that grades it is a system that gets abandoned.
+
 ### A chore written down without a day is on the list today
 
 `chore.task.create` does not require `due_date`, and it no longer leaves it empty: a chore created

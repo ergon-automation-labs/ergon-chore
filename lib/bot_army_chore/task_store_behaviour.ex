@@ -11,6 +11,7 @@ defmodule BotArmyChore.TaskStoreBehaviour do
   @callback list(binary) :: [map]
   @callback list_all(binary) :: [map]
   @callback list_overdue_recurring(binary) :: [map]
+  @callback completions(binary, DateTime.t() | nil) :: [map] | {:error, term}
   @callback set_next_due(binary, DateTime.t()) :: {:ok, map} | {:error, term}
   @callback set_notification_level(binary, integer, DateTime.t()) :: {:ok, map} | {:error, term}
 end

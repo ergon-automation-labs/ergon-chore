@@ -120,6 +120,18 @@ defmodule BotArmyChore.TaskStore do
   end
 
   @doc """
+  Every recorded completion for a tenant since `since`, oldest first.
+
+  This is the read a habit's count is built on. It answers `{:error, reason}` rather than
+  an empty list when the store cannot be read, so a surface can say "I could not find out"
+  instead of drawing "never done".
+  """
+  @impl BotArmyChore.TaskStoreBehaviour
+  def completions(tenant_id, since \\ nil) when is_binary(tenant_id) do
+    GenServer.call(@server, {:completions, tenant_id, since})
+  end
+
+  @doc """
   Set the next due date for a recurring task.
 
   Returns `{:ok, task}` with the updated task, or `{:error, reason}`.
@@ -335,7 +347,14 @@ defmodule BotArmyChore.TaskStore do
 
       _task ->
         task_uuid = Ecto.UUID.cast!(task_id)
+        completed_at = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
 
+        # The completion and the row that records *this occasion* are one transaction. The
+        # task's own `completed_at` is overwritten on the next completion, so on its own it
+        # can say when but never how often — and a habit count built on an overwritten
+        # column would be invented. If the history cannot be written, the chore is not
+        # completed either: a press that succeeded and left no record would be the same lie
+        # the other way round.
         case BotArmyChore.Repo.transaction(fn ->
                db_task = BotArmyChore.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
 
@@ -343,15 +362,27 @@ defmodule BotArmyChore.TaskStore do
                  changeset =
                    BotArmyChore.Schemas.Task.changeset(
                      db_task,
-                     %{
-                       "status" => "completed",
-                       "completed_at" =>
-                         NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
-                     }
+                     %{"status" => "completed", "completed_at" => completed_at}
                    )
 
-                 case BotArmyChore.Repo.update(changeset) do
-                   {:ok, updated} -> updated
+                 updated =
+                   case BotArmyChore.Repo.update(changeset) do
+                     {:ok, updated} -> updated
+                     {:error, changeset} -> BotArmyChore.Repo.rollback(changeset)
+                   end
+
+                 case BotArmyChore.Repo.insert(
+                        BotArmyChore.Schemas.ChoreCompletion.changeset(
+                          %BotArmyChore.Schemas.ChoreCompletion{},
+                          %{
+                            task_id: updated.id,
+                            completed_at: DateTime.from_naive!(completed_at, "Etc/UTC"),
+                            tenant_id: updated.tenant_id,
+                            user_id: updated.user_id
+                          }
+                        )
+                      ) do
+                   {:ok, _completion} -> updated
                    {:error, changeset} -> BotArmyChore.Repo.rollback(changeset)
                  end
                else
@@ -415,6 +446,25 @@ defmodule BotArmyChore.TaskStore do
   def handle_call(:clear, _from, _state) do
     Logger.debug("Clearing all chore tasks")
     {:reply, :ok, %{}}
+  end
+
+  @impl true
+  def handle_call({:completions, tenant_id, since}, _from, state) do
+    import Ecto.Query
+
+    query =
+      from(c in BotArmyChore.Schemas.ChoreCompletion,
+        where: c.tenant_id == ^tenant_id,
+        order_by: [asc: c.completed_at]
+      )
+
+    query = if since, do: where(query, [c], c.completed_at >= ^since), else: query
+
+    {:reply, BotArmyChore.Repo.all(query), state}
+  rescue
+    error ->
+      Logger.error("Could not read chore completions: #{inspect(error)}")
+      {:reply, {:error, :read_failed}, state}
   end
 
   @impl true
@@ -538,7 +588,10 @@ defmodule BotArmyChore.TaskStore do
       "location" => task.location,
       "status" => task.status,
       "completed_at" =>
-        if(task.completed_at, do: task.completed_at |> BotArmyLibraryRuntime.Timestamp.utc_iso8601(), else: nil),
+        if(task.completed_at,
+          do: task.completed_at |> BotArmyLibraryRuntime.Timestamp.utc_iso8601(),
+          else: nil
+        ),
       "next_due_at" =>
         if(task.next_due_at, do: task.next_due_at |> DateTime.to_iso8601(), else: nil),
       "last_completed_at" =>

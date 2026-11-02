@@ -39,6 +39,11 @@ defmodule BotArmyChore.NATS.Consumer do
       type: :request_reply,
       description: "List the open chores, due first"
     },
+    %{
+      subject: "chore.habit.list",
+      type: :request_reply,
+      description: "Derive habits from recurring chores and their recorded completions"
+    },
     %{subject: "chore.assignment.rotate", type: :subscribe, description: "Rotate assignments"},
     %{subject: "chore.assignment.list", type: :request_reply, description: "List assignments"},
     %{
@@ -213,6 +218,9 @@ defmodule BotArmyChore.NATS.Consumer do
       "chore.task.list" ->
         handle_task_list(nats_msg)
 
+      "chore.habit.list" ->
+        handle_habit_list(nats_msg)
+
       "chore.assignment.rotate" ->
         BotArmyChore.Handlers.TaskHandler.handle_rotate(message)
 
@@ -282,6 +290,29 @@ defmodule BotArmyChore.NATS.Consumer do
   # Ordering is a decision, not a preference: `due_date` first (undated last, because a chore
   # with no day is not more urgent than one due today), then oldest first, so the list does not
   # reshuffle itself between two reads of the same chores.
+  # A habit is a recurring chore. There is no habit store and no habit to tick by hand, so
+  # a habit cannot exist for something she is not already doing — and the count is of
+  # *recorded* completions, never of an estimate.
+  #
+  # The completions read is a second question, and if it fails the answer is "could not
+  # read" rather than a list whose every count is quietly zero: a habit drawn as "none of
+  # the last four" when the history was unreadable would be an accusation, not a fact.
+  defp handle_habit_list(nats_msg) do
+    reply(nats_msg, fn ->
+      tenant_id = BotArmyLibraryCore.Tenant.default_tenant_id()
+
+      with {:ok, tasks} <- task_store().list_all(tenant_id),
+           completions when is_list(completions) <- task_store().completions(tenant_id) do
+        %{
+          "habits" => BotArmyChore.Habits.derive(tasks, completions),
+          "as_of" => DateTime.utc_now() |> DateTime.to_iso8601()
+        }
+      else
+        _ -> %{"habits" => [], "error" => "read_failed"}
+      end
+    end)
+  end
+
   defp handle_task_list(nats_msg) do
     reply(nats_msg, fn ->
       tenant_id = BotArmyLibraryCore.Tenant.default_tenant_id()

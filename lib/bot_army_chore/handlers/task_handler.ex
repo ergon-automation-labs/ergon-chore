@@ -214,6 +214,17 @@ defmodule BotArmyChore.Handlers.TaskHandler do
             answer(reply_to, {:ok, %{"chore" => task}})
             publish_event("chore.task.completed", payload, event_id, tenant_id, user_id)
 
+          {:error, :already_completed} ->
+            # Not an error the device should retry: the first press landed. Saying so is the
+            # point — a card that answered "done" again would let a slow answer plus a retry
+            # look like two chores and two occasions.
+            answer(
+              reply_to,
+              {:error, "that one was already counted a moment ago", :already_completed}
+            )
+
+            Logger.info("Repeat completion ignored: task_id=#{payload["task_id"]}")
+
           {:error, :not_found} ->
             answer(reply_to, {:error, "that chore is not on the list", :not_found})
             Logger.warning("Task not found: #{payload["task_id"]}")
@@ -240,11 +251,21 @@ defmodule BotArmyChore.Handlers.TaskHandler do
   line without having to remember what it sent.
   """
   def handle_archive(message, reply_to \\ nil) do
-    with_task_id(message, reply_to, "chore.task.archived", fn task_id, tenant_id, user_id, event_id ->
+    with_task_id(message, reply_to, "chore.task.archived", fn task_id,
+                                                              tenant_id,
+                                                              user_id,
+                                                              event_id ->
       case task_store().archive(task_id) do
         {:ok, task} ->
           answer(reply_to, {:ok, %{"chore" => task}})
-          publish_event("chore.task.archived", %{"task_id" => task_id}, event_id, tenant_id, user_id)
+
+          publish_event(
+            "chore.task.archived",
+            %{"task_id" => task_id},
+            event_id,
+            tenant_id,
+            user_id
+          )
 
         {:error, :not_found} ->
           answer(reply_to, {:error, "that chore is not on the list", :not_found})
@@ -258,11 +279,21 @@ defmodule BotArmyChore.Handlers.TaskHandler do
 
   @doc "Take a chore back out of the drawer. Clears the mark; changes nothing else."
   def handle_restore(message, reply_to \\ nil) do
-    with_task_id(message, reply_to, "chore.task.restored", fn task_id, tenant_id, user_id, event_id ->
+    with_task_id(message, reply_to, "chore.task.restored", fn task_id,
+                                                              tenant_id,
+                                                              user_id,
+                                                              event_id ->
       case task_store().restore(task_id) do
         {:ok, task} ->
           answer(reply_to, {:ok, %{"chore" => task}})
-          publish_event("chore.task.restored", %{"task_id" => task_id}, event_id, tenant_id, user_id)
+
+          publish_event(
+            "chore.task.restored",
+            %{"task_id" => task_id},
+            event_id,
+            tenant_id,
+            user_id
+          )
 
         {:error, :not_found} ->
           answer(reply_to, {:error, "that chore is not on the list", :not_found})
@@ -281,7 +312,10 @@ defmodule BotArmyChore.Handlers.TaskHandler do
   press that reports success without changing anything teaches the caller to distrust it.
   """
   def handle_uncomplete(message, reply_to \\ nil) do
-    with_task_id(message, reply_to, "chore.task.uncompleted", fn task_id, tenant_id, user_id, event_id ->
+    with_task_id(message, reply_to, "chore.task.uncompleted", fn task_id,
+                                                                 tenant_id,
+                                                                 user_id,
+                                                                 event_id ->
       case task_store().uncomplete(task_id) do
         {:ok, task} ->
           answer(reply_to, {:ok, %{"chore" => task}})

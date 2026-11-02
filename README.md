@@ -35,7 +35,11 @@ iex -S mix
   (`once|daily|weekly|monthly|yearly`); answers `{"ok": true, "data": {"chore": {...}}}` with the
   stored row, or `{"ok": false, "error": …}` in words.
 - `chore.task.complete` (request/reply) — one press, `{"task_id": ...}`, answering the completed
-  row or `code: "not_found"`.
+  row or `code: "not_found"`. Pressing it again **within two minutes** is refused with
+  `code: "already_completed"` ("that one was already counted a moment ago") and nothing is
+  written: a slow answer plus a retry is one occasion, and counting it twice would move a weekly
+  chore a second week forward and make the derived habit report two occasions where she did the
+  work once. A daily chore genuinely done twice in a day is hours apart, so it still counts twice.
 - `chore.task.uncomplete` (request/reply) — the undo for a press that was a mistake. Deletes the
   **latest** recorded occasion and restores the `next_due_at` that completion displaced (stored
   on the completion row as `next_due_at_before`; recomputing from the cadence would move a weekly

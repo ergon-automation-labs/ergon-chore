@@ -73,6 +73,15 @@ defmodule BotArmyChore.LifecycleTest do
              )
   end
 
+  test "a repeat press is refused in words, and the schedule is not advanced again" do
+    # `set_next_due` has no expectation here: Mox fails the test if the handler advances a
+    # schedule for a press that was refused as a repeat.
+    expect(BotArmyChore.TaskStoreMock, :complete, fn @task_id -> {:error, :already_completed} end)
+
+    assert :ok =
+             TaskHandler.handle_complete(message("chore.task.complete", %{"task_id" => @task_id}))
+  end
+
   test "a press with no id never reaches the store" do
     # No expectation is set: Mox fails the test if the store is called at all.
     assert :ok = TaskHandler.handle_archive(message("chore.task.archive", %{}))

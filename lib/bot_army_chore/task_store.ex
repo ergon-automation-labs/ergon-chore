@@ -427,76 +427,15 @@ defmodule BotArmyChore.TaskStore do
         {:reply, {:error, :not_found}, state}
 
       task ->
-        task_uuid = Ecto.UUID.cast!(task_id)
-        completed_at = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
-
-        # Captured before the row moves: this is the schedule the press displaces, and the
-        # undo has no other way to know it.
-        next_due_before =
-          case task["next_due_at"] do
-            nil ->
-              nil
-
-            iso ->
-              case DateTime.from_iso8601(iso) do
-                {:ok, dt, _} -> dt
-                _ -> nil
-              end
-          end
-
-        # The completion and the row that records *this occasion* are one transaction. The
-        # task's own `completed_at` is overwritten on the next completion, so on its own it
-        # can say when but never how often — and a habit count built on an overwritten
-        # column would be invented. If the history cannot be written, the chore is not
-        # completed either: a press that succeeded and left no record would be the same lie
-        # the other way round.
-        case BotArmyChore.Repo.transaction(fn ->
-               db_task = BotArmyChore.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
-
-               if db_task do
-                 changeset =
-                   BotArmyChore.Schemas.Task.changeset(
-                     db_task,
-                     %{"status" => "completed", "completed_at" => completed_at}
-                   )
-
-                 updated =
-                   case BotArmyChore.Repo.update(changeset) do
-                     {:ok, updated} -> updated
-                     {:error, changeset} -> BotArmyChore.Repo.rollback(changeset)
-                   end
-
-                 case BotArmyChore.Repo.insert(
-                        BotArmyChore.Schemas.ChoreCompletion.changeset(
-                          %BotArmyChore.Schemas.ChoreCompletion{},
-                          %{
-                            task_id: updated.id,
-                            completed_at: DateTime.from_naive!(completed_at, "Etc/UTC"),
-                            next_due_at_before: next_due_before,
-                            tenant_id: updated.tenant_id,
-                            user_id: updated.user_id
-                          }
-                        )
-                      ) do
-                   {:ok, _completion} -> updated
-                   {:error, changeset} -> BotArmyChore.Repo.rollback(changeset)
-                 end
-               else
-                 BotArmyChore.Repo.rollback(:not_found)
-               end
-             end) do
-          {:ok, completed_db_task} ->
-            completed_task = schema_to_map(completed_db_task)
-            new_state = Map.put(state, task_id, completed_task)
-            Logger.info("Completed chore task in database: #{task_id}")
-            {:reply, {:ok, completed_task}, new_state}
-
-          {:error, :not_found} ->
-            {:reply, {:error, :not_found}, state}
-
-          {:error, changeset} ->
-            Logger.error("Failed to complete task: #{inspect(changeset.errors)}")
-            {:reply, {:error, :database_error}, state}
+        if recently_completed?(task) do
+          # The same occasion, pressed twice. This is not hypothetical: the handheld's write
+          # budget is 20 s, so a press that times out and is pressed again arrives twice for
+          # one chore — and a second completion moves a weekly chore a second week and writes
+          # a second history row, which the derived habit then counts. Saying "already
+          # counted" is the truthful answer, and it tells the device its first press landed.
+          {:reply, {:error, :already_completed}, state}
+        else
+          complete_now(task, task_id, state)
         end
     end
   end
@@ -714,6 +653,108 @@ defmodule BotArmyChore.TaskStore do
   # Helper function to convert Ecto schema to map for GenServer state
   # Both marks are written the same way: one transaction, one changeset, and the in-memory
   # map is only replaced with what the database actually stored.
+  # How long after a completion the same press is treated as a repeat rather than a second
+  # occasion. Long enough to cover an impatient double-tap and a retry after a slow answer;
+  # short enough that a daily chore done twice in one day still counts twice.
+  @repeat_window_seconds 120
+
+  @doc """
+  Was this chore completed so recently that another press is the same press again?
+
+  Pure, so the rule can be tested without a database: an ISO timestamp in, a boolean out.
+  A row with no timestamp, or one that will not parse, is *not* recent — refusing on a value
+  we could not read would block a real completion.
+  """
+  def recently_completed?(task, now \\ DateTime.utc_now()) do
+    case task["completed_at"] do
+      nil ->
+        false
+
+      iso when is_binary(iso) ->
+        case DateTime.from_iso8601(iso) do
+          {:ok, at, _} -> DateTime.diff(now, at, :second) < @repeat_window_seconds
+          _ -> false
+        end
+
+      _ ->
+        false
+    end
+  end
+
+  defp complete_now(task, task_id, state) do
+    task_uuid = Ecto.UUID.cast!(task_id)
+    completed_at = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
+
+    # Captured before the row moves: this is the schedule the press displaces, and the
+    # undo has no other way to know it.
+    next_due_before =
+      case task["next_due_at"] do
+        nil ->
+          nil
+
+        iso ->
+          case DateTime.from_iso8601(iso) do
+            {:ok, dt, _} -> dt
+            _ -> nil
+          end
+      end
+
+    # The completion and the row that records *this occasion* are one transaction. The
+    # task's own `completed_at` is overwritten on the next completion, so on its own it
+    # can say when but never how often — and a habit count built on an overwritten
+    # column would be invented. If the history cannot be written, the chore is not
+    # completed either: a press that succeeded and left no record would be the same lie
+    # the other way round.
+    case BotArmyChore.Repo.transaction(fn ->
+           db_task = BotArmyChore.Repo.get(BotArmyChore.Schemas.Task, task_uuid)
+
+           if db_task do
+             changeset =
+               BotArmyChore.Schemas.Task.changeset(
+                 db_task,
+                 %{"status" => "completed", "completed_at" => completed_at}
+               )
+
+             updated =
+               case BotArmyChore.Repo.update(changeset) do
+                 {:ok, updated} -> updated
+                 {:error, changeset} -> BotArmyChore.Repo.rollback(changeset)
+               end
+
+             case BotArmyChore.Repo.insert(
+                    BotArmyChore.Schemas.ChoreCompletion.changeset(
+                      %BotArmyChore.Schemas.ChoreCompletion{},
+                      %{
+                        task_id: updated.id,
+                        completed_at: DateTime.from_naive!(completed_at, "Etc/UTC"),
+                        next_due_at_before: next_due_before,
+                        tenant_id: updated.tenant_id,
+                        user_id: updated.user_id
+                      }
+                    )
+                  ) do
+               {:ok, _completion} -> updated
+               {:error, changeset} -> BotArmyChore.Repo.rollback(changeset)
+             end
+           else
+             BotArmyChore.Repo.rollback(:not_found)
+           end
+         end) do
+      {:ok, completed_db_task} ->
+        completed_task = schema_to_map(completed_db_task)
+        new_state = Map.put(state, task_id, completed_task)
+        Logger.info("Completed chore task in database: #{task_id}")
+        {:reply, {:ok, completed_task}, new_state}
+
+      {:error, :not_found} ->
+        {:reply, {:error, :not_found}, state}
+
+      {:error, changeset} ->
+        Logger.error("Failed to complete task: #{inspect(changeset.errors)}")
+        {:reply, {:error, :database_error}, state}
+    end
+  end
+
   defp write_mark(state, task_id, attrs) do
     task_uuid = Ecto.UUID.cast!(task_id)
 

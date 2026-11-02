@@ -825,8 +825,12 @@ defmodule BotArmyChore.TaskStore do
 
         if is_nil(db_task), do: BotArmyChore.Repo.rollback(:not_found)
 
+        # The status the completion displaced, not one inferred from the cadence: a chore
+        # with no occasion left in its history has not been done, so it goes back to
+        # `pending` — a recurring chore that read `completed` with an empty history would be
+        # dropped from the reminder loop for a chore she has never done.
         attrs = %{
-          "status" => if(task["frequency"] == "once", do: "pending", else: "completed"),
+          "status" => if(is_nil(previous), do: "pending", else: "completed"),
           "completed_at" => previous && DateTime.to_naive(previous.completed_at),
           "next_due_at" => last.next_due_at_before
         }

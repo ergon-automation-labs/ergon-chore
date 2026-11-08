@@ -23,13 +23,25 @@ defmodule BotArmyChore.Schemas.ChoreCompletion do
     # and quietly make the undo a different schedule.
     field(:next_due_at_before, :utc_datetime_usec)
 
+    # What this completion displaced in `tasks.completed_at`. The undo needs it for the
+    # same reason it needs `next_due_at_before`: history that predates this table has no
+    # row to fall back on, and "not done yet" about a chore she did last week is a lie.
+    field(:completed_at_before, :utc_datetime_usec)
+
     timestamps(type: :utc_datetime_usec)
   end
 
   @doc false
   def changeset(completion, attrs) do
     completion
-    |> cast(attrs, [:task_id, :completed_at, :tenant_id, :user_id, :next_due_at_before])
+    |> cast(attrs, [
+      :task_id,
+      :completed_at,
+      :tenant_id,
+      :user_id,
+      :next_due_at_before,
+      :completed_at_before
+    ])
     |> validate_required([:task_id, :completed_at, :tenant_id])
   end
 end

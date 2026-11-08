@@ -685,8 +685,22 @@ defmodule BotArmyChore.TaskStore do
     task_uuid = Ecto.UUID.cast!(task_id)
     completed_at = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
 
-    # Captured before the row moves: this is the schedule the press displaces, and the
-    # undo has no other way to know it.
+    # Captured before the row moves: these are the two facts the press displaces, and the
+    # undo has no other way to know them. `completed_at` is here as well as the schedule
+    # because a chore whose history predates the completions table has no row to fall back
+    # on, and without it the undo turns "last done a week ago" into "not done yet".
+    completed_before =
+      case task["completed_at"] do
+        nil ->
+          nil
+
+        iso ->
+          case DateTime.from_iso8601(iso) do
+            {:ok, dt, _} -> DateTime.to_naive(dt)
+            _ -> nil
+          end
+      end
+
     next_due_before =
       case task["next_due_at"] do
         nil ->
@@ -728,6 +742,7 @@ defmodule BotArmyChore.TaskStore do
                         task_id: updated.id,
                         completed_at: DateTime.from_naive!(completed_at, "Etc/UTC"),
                         next_due_at_before: next_due_before,
+                        completed_at_before: completed_before,
                         tenant_id: updated.tenant_id,
                         user_id: updated.user_id
                       }
@@ -753,6 +768,29 @@ defmodule BotArmyChore.TaskStore do
         Logger.error("Failed to complete task: #{inspect(changeset.errors)}")
         {:reply, {:error, :database_error}, state}
     end
+  end
+
+  @doc """
+  What taking back a completion puts on the task row.
+
+  Pure so it can be tested without a database, and shared by every caller so the rule lives
+  in one place: the completion records the facts it displaced (`completed_at_before`,
+  `next_due_at_before`), and the undo restores exactly those. `previous` — the newest
+  completion that remains — is only a fallback for rows written before
+  `completed_at_before` existed.
+
+  A row with nothing to restore goes back to `pending`: inferring the status from the
+  cadence would leave a chore she has never done reading `completed`, which drops it out of
+  the reminder loop and out of `chore.task.list`.
+  """
+  def undo_attrs(%{} = last, previous \\ nil) do
+    restored = last.completed_at_before || (previous && previous.completed_at)
+
+    %{
+      "status" => if(is_nil(restored), do: "pending", else: "completed"),
+      "completed_at" => restored && DateTime.to_naive(restored),
+      "next_due_at" => last.next_due_at_before
+    }
   end
 
   defp write_mark(state, task_id, attrs) do
@@ -789,7 +827,7 @@ defmodule BotArmyChore.TaskStore do
   # `next_due_at` comes from the completion row (what it displaced), and `status` comes from
   # the task's own shape — a one-off goes back to pending, a recurring chore goes back to the
   # completed-but-due state it lives in between occasions.
-  defp undo_completion(task, task_id, state) do
+  defp undo_completion(_task, task_id, state) do
     import Ecto.Query
 
     task_uuid = Ecto.UUID.cast!(task_id)
@@ -825,15 +863,7 @@ defmodule BotArmyChore.TaskStore do
 
         if is_nil(db_task), do: BotArmyChore.Repo.rollback(:not_found)
 
-        # The status the completion displaced, not one inferred from the cadence: a chore
-        # with no occasion left in its history has not been done, so it goes back to
-        # `pending` — a recurring chore that read `completed` with an empty history would be
-        # dropped from the reminder loop for a chore she has never done.
-        attrs = %{
-          "status" => if(is_nil(previous), do: "pending", else: "completed"),
-          "completed_at" => previous && DateTime.to_naive(previous.completed_at),
-          "next_due_at" => last.next_due_at_before
-        }
+        attrs = undo_attrs(last, previous)
 
         case BotArmyChore.Schemas.Task.changeset(db_task, attrs)
              |> BotArmyChore.Repo.update() do

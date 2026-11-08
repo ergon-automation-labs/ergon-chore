@@ -41,11 +41,15 @@ iex -S mix
   chore a second week forward and make the derived habit report two occasions where she did the
   work once. A daily chore genuinely done twice in a day is hours apart, so it still counts twice.
 - `chore.task.uncomplete` (request/reply) — the undo for a press that was a mistake. Deletes the
-  **latest** recorded occasion and restores the `next_due_at` that completion displaced (stored
-  on the completion row as `next_due_at_before`; recomputing from the cadence would move a weekly
-  chore to "tonight + 7" and make the undo a different schedule). Answers the row, or
-  `code: "no_completion"` when there is nothing to take back — a press that reports success after
-  changing nothing is the same lie as one that reports failure after doing the work.
+  **latest** recorded occasion and restores both facts that completion displaced, stored on the
+  completion row: `next_due_at_before` (recomputing from the cadence would move a weekly chore to
+  "tonight + 7" and make the undo a different schedule) and `completed_at_before` (measured
+  2026-11-08: the porch's last completion predated this table, so the undo had no remaining row to
+  fall back on, wrote `completed_at: nil`, and the card said "not done yet" about a porch she
+  had swept a week earlier). With nothing at all to restore the row goes back to `pending`, never to
+  a `completed` inferred from the cadence. Answers the row, or `code: "no_completion"` when there
+  is nothing to take back — a press that reports success after changing nothing is the same lie as
+  one that reports failure after doing the work.
 - `chore.task.archive` (request/reply) — "I stopped doing this one". Sets `archived_at`; the row
   keeps its id, its schedule and its completion history, and every read filters the mark, so the
   chore leaves the card and the habit list without anything being destroyed.

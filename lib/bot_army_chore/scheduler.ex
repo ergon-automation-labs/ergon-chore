@@ -47,10 +47,21 @@ defmodule BotArmyChore.Scheduler do
   # `due_date`, so without this filter every finished chore would be reminded about forever —
   # and a reminder about work already done is the one kind that teaches her to ignore the rest.
   defp open_and_dated?(task) when is_map(task) do
-    task["status"] in ["pending", "in_progress"] and is_binary(task["due_date"])
+    task["status"] in ["pending", "in_progress"] and is_binary(task["due_date"]) and
+      not routine?(task)
   end
 
   defp open_and_dated?(_), do: false
+
+  # A routine is never late, so it is never reminded about.
+  #
+  # `chore.task.create` stamps `due_date` today on every row, including a habit, so without
+  # this the reminder ladder (1 day "due", 3 "overdue", 7 "urgent") would start speaking about
+  # brushing her teeth — the one thing a routine must never be told. A chore owes someone when
+  # it is late; a habit owes nobody, and an escalation about it is how a support system becomes
+  # a boss. The cadence still lands it back on the habits screen tomorrow; nothing needs
+  # reminding.
+  defp routine?(task), do: task["category"] == "habit"
 
   # The store's own wire shape carries `due_date` as an ISO date string, so this parses rather
   # than pattern-matching a struct: the previous version compared a string to a `DateTime` and

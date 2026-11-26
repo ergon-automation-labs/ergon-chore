@@ -53,6 +53,30 @@ defmodule BotArmyChore.SchedulerTest do
       assert [] = BotArmyChore.Scheduler.check_overdue_tasks()
     end
 
+    test "a routine is never reminded about, however old its due date" do
+      # `chore.task.create` stamps a due date on a habit too, so the ladder would otherwise
+      # climb from "due" to "urgent" about brushing her teeth. A habit owes nobody.
+      expect(BotArmyChore.TaskStoreMock, :list_all, fn _tenant ->
+        {:ok,
+         [
+           task(%{
+             "title" => "Brush teeth",
+             "category" => "habit",
+             "frequency" => "daily",
+             "due_date" => Date.to_iso8601(Date.add(Date.utc_today(), -9))
+           }),
+           task(%{
+             "id" => "bins",
+             "title" => "Put out the bins",
+             "category" => "chore",
+             "due_date" => Date.to_iso8601(Date.add(Date.utc_today(), -2))
+           })
+         ]}
+      end)
+
+      assert [{"bins", 2}] = BotArmyChore.Scheduler.check_overdue_tasks()
+    end
+
     test "a store that cannot be read is an empty reminder list, not a crash" do
       expect(BotArmyChore.TaskStoreMock, :list_all, fn _tenant ->
         {:error, :database_unavailable}

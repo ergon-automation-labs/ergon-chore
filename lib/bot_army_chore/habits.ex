@@ -35,6 +35,7 @@ defmodule BotArmyChore.Habits do
   @type habit :: %{
           id: String.t(),
           title: String.t(),
+          category: String.t() | nil,
           cadence: String.t(),
           window_days: pos_integer(),
           expected_in_window: pos_integer(),
@@ -123,6 +124,10 @@ defmodule BotArmyChore.Habits do
     %{
       id: task["id"],
       title: task["title"],
+      # The chore's own category, passed through rather than interpreted: a surface that
+      # wants "the things she does most days" and not "the dishwasher" needs a word the
+      # bot already has, and a second list of habit names would drift from this one.
+      category: task["category"],
       cadence: cadence,
       window_days: window_days,
       expected_in_window: expected,

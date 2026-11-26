@@ -50,6 +50,27 @@ defmodule BotArmyChore.HabitsTest do
       assert %{window_days: 7, expected_in_window: 7} =
                Habits.derive([daily], [], @now) |> hd()
     end
+
+    test "a habit carries its chore's category, so a surface can tell a routine from a household chore" do
+      [brushed, swept] =
+        Habits.derive(
+          [
+            chore(%{
+              "id" => "b",
+              "title" => "Brush teeth",
+              "category" => "habit",
+              "frequency" => "daily"
+            }),
+            chore(%{"id" => "s", "category" => "chore"})
+          ],
+          [],
+          @now
+        )
+        |> Enum.sort_by(& &1.id)
+
+      assert brushed.category == "habit"
+      assert swept.category == "chore"
+    end
   end
 
   describe "the count is of recorded completions, or it is absent" do
@@ -194,5 +215,4 @@ defmodule BotArmyChore.HabitsTest do
 
     assert Enum.map(habits, & &1.title) == ["Water the plants"]
   end
-
 end
